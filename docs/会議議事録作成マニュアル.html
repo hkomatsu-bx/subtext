@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会議議事録 作成マニュアル</title>
+<style>
+/* 単一ファイルで完結させる（外部 CSS・フォント・スクリプトを読み込まない）。 */
+
+/* ---- 印刷面（A4 縦。ヘッダー・フッターはブラウザの印刷設定側に委ねる） ---- */
+@page {
+  size: A4;
+  margin: 18mm 16mm 18mm 16mm;
+}
+
+:root {
+  --fg: #1b1b1f;
+  --fg-muted: #5c5f66;
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
+  --bg-code: #f4f5f7;
+  --border: #d6d9de;
+  --border-strong: #b6bac1;
+  --accent: #b3413a;
+  --accent-soft: #fdf1f0;
+  --link: #1e5aa8;
+  --serif: "Yu Mincho", "YuMincho", "Hiragino Mincho ProN", "MS PMincho", serif;
+  --sans: "Yu Gothic UI", "Yu Gothic", "Hiragino Kaku Gothic ProN", "Meiryo", system-ui, sans-serif;
+  --mono: "Cascadia Mono", "Consolas", "SFMono-Regular", "Menlo", "MS Gothic", monospace;
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--fg);
+  background: var(--bg);
+  font-family: var(--sans);
+  font-size: 15px;
+  line-height: 1.85;
+  font-feature-settings: "palt" 1;
+  text-align: left;
+}
+
+.sheet {
+  max-width: 210mm;
+  margin: 0 auto;
+  padding: 28px 32px 64px;
+}
+
+/* ---- 表紙ブロック ---- */
+.cover {
+  border-bottom: 3px solid var(--accent);
+  padding-bottom: 18px;
+  margin-bottom: 28px;
+}
+.cover .eyebrow {
+  font-size: 12px;
+  letter-spacing: .18em;
+  color: var(--accent);
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+.cover h1 {
+  font-family: var(--serif);
+  font-size: 30px;
+  line-height: 1.4;
+  margin: 0 0 14px;
+  letter-spacing: .01em;
+}
+.cover dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 14px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.cover dt { font-weight: 700; }
+.cover dd { margin: 0; }
+.cover dd code { font-size: 12px; }
+
+/* ---- 目次 ---- */
+.toc {
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  border-radius: 4px;
+  padding: 18px 22px;
+  margin-bottom: 8px;
+}
+.toc h2 {
+  font-size: 13px;
+  letter-spacing: .16em;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  color: var(--fg-muted);
+  page-break-before: auto;
+  break-before: auto;
+}
+.toc ol { list-style: none; margin: 0; padding: 0; }
+.toc li { margin: 0; line-height: 1.7; }
+.toc a { text-decoration: none; color: var(--link); }
+.toc a:hover { text-decoration: underline; }
+.toc-h2 { font-weight: 700; margin-top: 7px; font-size: 14px; }
+.toc-h3 { padding-left: 1.35em; font-size: 13px; }
+.toc-h3 a { color: var(--fg); }
+
+/* ---- 見出し ---- */
+h2, h3, h4 { font-family: var(--serif); }
+h2 {
+  font-size: 22px;
+  line-height: 1.45;
+  margin: 0 0 18px;
+  padding: 0 0 8px;
+  border-bottom: 2px solid var(--border-strong);
+  page-break-before: always;
+  break-before: page;
+  page-break-after: avoid;
+  break-after: avoid;
+}
+h3 {
+  font-size: 17px;
+  margin: 30px 0 10px;
+  padding-left: 11px;
+  border-left: 4px solid var(--accent);
+  page-break-after: avoid;
+  break-after: avoid;
+}
+h2 + h3 { margin-top: 12px; }
+
+p { margin: 0 0 12px; }
+
+/* ---- リンク ---- */
+a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+
+/* ---- 強調・コード ---- */
+strong { font-weight: 700; }
+code {
+  font-family: var(--mono);
+  font-size: 0.88em;
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 4px;
+  word-break: break-all;
+}
+pre {
+  font-family: var(--mono);
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: 4px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 1.7;
+  /* 印刷で右端が切れないよう折り返す。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+pre code {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: inherit;
+  word-break: normal;
+}
+
+/* ---- 箇条書き ---- */
+ul, ol { margin: 0 0 14px; padding-left: 1.55em; }
+li { margin: 0 0 5px; }
+li > ul, li > ol { margin: 5px 0 0; }
+
+/* ---- 引用（注意書き） ---- */
+blockquote {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  background: var(--accent-soft);
+  border: 1px solid #f0d6d3;
+  border-left: 4px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+blockquote > :last-child { margin-bottom: 0; }
+blockquote ul { margin-bottom: 0; }
+
+/* ---- 表 ---- */
+.table-wrap { overflow-x: auto; margin: 0 0 16px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.7;
+  page-break-inside: auto;
+  break-inside: auto;
+}
+th, td {
+  border: 1px solid var(--border);
+  padding: 7px 9px;
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+th {
+  background: var(--bg-soft);
+  font-weight: 700;
+  white-space: nowrap;
+}
+tr { page-break-inside: avoid; break-inside: avoid; }
+thead { display: table-header-group; }
+
+/* ---- 画面表示のみ：ダークテーマ ---- */
+@media screen and (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e7ea;
+    --fg-muted: #a3a7b0;
+    --bg: #16171a;
+    --bg-soft: #1f2124;
+    --bg-code: #1c1e21;
+    --border: #33363c;
+    --border-strong: #4a4e56;
+    --accent: #e0554b;
+    --accent-soft: #2a1d1c;
+    --link: #7fb0ee;
+  }
+  blockquote { border-color: #47302e; }
+}
+
+/* ---- 印刷時の調整 ---- */
+@media print {
+  :root {
+    --fg: #000;
+    --fg-muted: #444;
+    --bg: #fff;
+    --bg-soft: #f2f2f2;
+    --bg-code: #f4f4f4;
+    --border: #999;
+    --border-strong: #666;
+    --accent: #8c322c;
+    --accent-soft: #f7f0ef;
+    --link: #000;
+  }
+  body { font-size: 10.5pt; line-height: 1.7; }
+  .sheet { max-width: none; margin: 0; padding: 0; }
+  /* 表・コードの地色を印刷にも残す。 */
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  a { color: #000; text-decoration: none; }
+  .toc { page-break-after: always; break-after: page; }
+  .cover { page-break-after: avoid; break-after: avoid; }
+  h2 { font-size: 15pt; }
+  h3 { font-size: 12pt; }
+  pre, table { font-size: 9pt; }
+  p, li { orphans: 2; widows: 2; }
+  .screen-only { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="sheet">
+
+<header class="cover">
+  <p class="eyebrow">SUBTEXT / 運用手順書</p>
+  <h1>会議議事録 作成マニュアル</h1>
+  <dl>
+    <dt>対象</dt><dd>運用担当者（エンジニアでなくても回せること）</dd>
+    <dt>位置づけ</dt><dd>本ファイルがマニュアルの原本（Markdown 版は廃止）。修正はこの HTML を直接編集する。</dd>
+    <dt>最終更新</dt><dd>2026-07-29</dd>
+    <dt>取り扱い</dt><dd>社内限り。会議の音声・実名などの個人情報は社外に出さない。</dd>
+  </dl>
+</header>
+
+<nav class="toc">
+  <h2>目次</h2>
+  <ol>
+<li class="toc-h2"><a href="#用語ミニ辞典先に4つだけ">用語ミニ辞典（先に4つだけ）</a></li>
+<li class="toc-h2"><a href="#0-まず手元にあるものを確認する">0. まず手元にあるものを確認する</a></li>
+<li class="toc-h2"><a href="#1-事前準備初回その-pc-で1回だけ">1. 事前準備（初回・その PC で1回だけ）</a></li>
+<li class="toc-h3"><a href="#1-1-uv-と-powershell-7-を入れる">1-1. uv と PowerShell 7 を入れる</a></li>
+<li class="toc-h3"><a href="#1-2-配布フォルダを置く">1-2. 配布フォルダを置く</a></li>
+<li class="toc-h3"><a href="#1-3-セットアップスクリプトを1回流す">1-3. セットアップスクリプトを1回流す</a></li>
+<li class="toc-h3"><a href="#1-4-env設定ファイルを埋める">1-4. .env（設定ファイル）を埋める</a></li>
+<li class="toc-h3"><a href="#1-5経路-c-を使う時のみffmpeg-を入れる">1-5.（経路 C を使う時のみ）ffmpeg を入れる</a></li>
+<li class="toc-h3"><a href="#1-6-aws-にログインできているか経路-a--c">1-6. AWS にログインできているか（経路 A / C）</a></li>
+<li class="toc-h2"><a href="#2-画面で進めるtui">2. 画面で進める（TUI）</a></li>
+<li class="toc-h3"><a href="#2-1-起動する">2-1. 起動する</a></li>
+<li class="toc-h3"><a href="#2-2-画面の見方">2-2. 画面の見方</a></li>
+<li class="toc-h3"><a href="#2-3-録音する経路-a">2-3. 録音する（経路 A）</a></li>
+<li class="toc-h3"><a href="#2-4-字幕録画を取り込む経路-b--c">2-4. 字幕・録画を取り込む（経路 B / C）</a></li>
+<li class="toc-h3"><a href="#2-5-議事録を作る">2-5. 議事録を作る</a></li>
+<li class="toc-h3"><a href="#2-6-slack-へ投稿する">2-6. Slack へ投稿する</a></li>
+<li class="toc-h3"><a href="#2-7-claude-生成に切り替える">2-7. Claude 生成に切り替える</a></li>
+<li class="toc-h3"><a href="#2-8-画面でできないこと">2-8. 画面でできないこと</a></li>
+<li class="toc-h2"><a href="#3共通話者名の確認話者名ゲート">3.［共通］話者名の確認（話者名ゲート）</a></li>
+<li class="toc-h2"><a href="#4-要約バックエンドの選び方bedrock-か-claude-か">4. 要約バックエンドの選び方（Bedrock か Claude か）</a></li>
+<li class="toc-h2"><a href="#5-コマンドで細かく操作するcli">5. コマンドで細かく操作する（CLI）</a></li>
+<li class="toc-h3"><a href="#5-1-経路a録音して議事録を作る">5-1. 経路A：録音して議事録を作る</a></li>
+<li class="toc-h3"><a href="#5-2-経路b字幕webvttから議事録を作る">5-2. 経路B：字幕（WebVTT）から議事録を作る</a></li>
+<li class="toc-h3"><a href="#5-3-経路c録画mp4から議事録を作る">5-3. 経路C：録画（mp4）から議事録を作る</a></li>
+<li class="toc-h3"><a href="#5-4-対話1コマンドでまとめて進めるprocess">5-4. 対話1コマンドでまとめて進める（process）</a></li>
+<li class="toc-h3"><a href="#5-5-slack-へ投稿する">5-5. Slack へ投稿する</a></li>
+<li class="toc-h3"><a href="#5-6-ライブ字幕の記録から議事録を作る">5-6. ライブ字幕の記録から議事録を作る</a></li>
+<li class="toc-h3"><a href="#5-7claude-生成を選んだ場合議事録の文章化">5-7.（Claude 生成を選んだ場合）議事録の文章化</a></li>
+<li class="toc-h2"><a href="#6-コストと注意点">6. コストと注意点</a></li>
+<li class="toc-h2"><a href="#7-困ったときはトラブルシューティング">7. 困ったときは（トラブルシューティング）</a></li>
+<li class="toc-h2"><a href="#付録コマンド早見表">付録：コマンド早見表</a></li>
+  </ol>
+</nav>
+
+<main>
+<p>Web 会議の音声・字幕から、Subtext を使って議事録（<code>minutes.md</code>）を作り、Slack へ投稿するまでの手順書です。
+<strong>運用担当者</strong>（エンジニアでなくても回せること）を想定しています。</p>
+<p>通常の運用は<strong>画面（TUI）だけで一周できます</strong>。
+録音・取込・話者名の記入・議事録・Slack 投稿は、すべて1つの画面の中で完結します。</p>
+<blockquote>
+<p>初めての人は「<a href="#0-まず手元にあるものを確認する">0. まず手元にあるものを確認する</a>」→「<a href="#1-事前準備初回その-pc-で1回だけ">1. 事前準備</a>」→「<a href="#2-画面で進めるtui">2. 画面で進める（TUI）</a>」の順に読んでください。
+画面では届かない細かい操作（ライブ字幕、セッションや月を指定した実行、<code>--no-summarize</code> での課金ゼロ運用）は「<a href="#5-コマンドで細かく操作するcli">5. コマンドで細かく操作する（CLI）</a>」にあります。</p>
+</blockquote>
+<h2 id="用語ミニ辞典先に4つだけ">用語ミニ辞典（先に4つだけ）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>用語</th>
+<th>かんたんな意味</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>セッション</strong></td>
+<td>1回の会議に対応する作業フォルダ。<code>data/recordings/20260704-140000/</code> のように日時が名前になる。</td>
+</tr>
+<tr>
+<td><strong>文字起こし（Transcribe）</strong></td>
+<td>音声を AWS のサービスで文字にする処理。<strong>AWS 課金が発生</strong>。</td>
+</tr>
+<tr>
+<td><strong>要約（Bedrock / Claude）</strong></td>
+<td>文字起こしから議事録の体裁（決定事項・ToDo 等）を作る処理。</td>
+</tr>
+<tr>
+<td><strong>話者名ゲート</strong></td>
+<td>「spk_0 は誰？」を人間が埋めるまで議事録を作らせない安全弁。必ず1回止まる。</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="0-まず手元にあるものを確認する">0. まず手元にあるものを確認する</h2>
+<p>議事録の入口は <strong>3通り</strong> あります。
+手元にあるものと、AWS 課金の許容度で選んでください。
+<strong>3通りとも画面（TUI）から実行できます</strong>。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>経路</th>
+<th>手元にあるもの</th>
+<th>AWS 課金</th>
+<th>主な用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>A. 録音経路</strong></td>
+<td>これから会議する（音声を録りたい）</td>
+<td>文字起こし＋要約</td>
+<td>会議に参加せず、自分の PC の音声から録る主経路</td>
+</tr>
+<tr>
+<td><strong>B. WebVTT 直接</strong></td>
+<td>Teams 等が出した字幕ファイル（<code>.vtt</code>）</td>
+<td>要約のみ</td>
+<td>既に字幕がある。最も安く速い</td>
+</tr>
+<tr>
+<td><strong>C. 録画 mp4</strong></td>
+<td>会議の録画（<code>.mp4</code>）</td>
+<td>文字起こし＋要約</td>
+<td>録画しか残っていない</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li><strong>迷ったら</strong>：字幕(.vtt)があれば <strong>B</strong>、録画(.mp4)しかなければ <strong>C</strong>、これから録るなら <strong>A</strong>。</li>
+<li>B と C は最終的に同じ「VTT を投入して議事録化」に合流します（C は mp4 から VTT を作ってから B と同じ流れ）。</li>
+<li>このほかに、会議中にライブ字幕を流しておいた場合はその記録からも議事録を作れます。会議中の確認が主目的の機能なので、通常は A〜C から選んでください（手順は §5-6）。</li>
+</ul>
+<pre><code>入口は次のどれか1つ（A / B / C いずれも「話者名の確認」に必ず合流する）:
+
+  A. 録音
+  B. 字幕VTT
+  C. 録画mp4 →（VTT に変換）
+        ↓（A・B・C いずれも）
+  話者名の確認（必ず1回停止）─→ 議事録 minutes.md ─→ Slack 投稿
+</code></pre>
+<h2 id="1-事前準備初回その-pc-で1回だけ">1. 事前準備（初回・その PC で1回だけ）</h2>
+<p>開発担当から受け取った<strong>配布フォルダ</strong>（<code>Subtext.sln</code> があるフォルダ）を使えるようにします。
+以降のコマンドはすべて、このフォルダを開いた状態で実行します。</p>
+<h3 id="1-1-uv-と-powershell-7-を入れる">1-1. uv と PowerShell 7 を入れる</h3>
+<p>この 2 つだけ先に入れます（社内 PC で導入できない場合は情シス／開発担当へ相談）。</p>
+<pre><code class="language-powershell">winget install astral-sh.uv            # Python 環境管理。Python 本体は uv が用意します
+winget install Microsoft.PowerShell    # PowerShell 7（pwsh）
+</code></pre>
+<blockquote>
+<p><strong>PowerShell 7（<code>pwsh</code>）は Windows 標準の <code>powershell.exe</code>（5.1）とは別物です。</strong>
+5.1 では動きません。導入後は <code>pwsh</code> と入力して開くウィンドウを使ってください。</p>
+</blockquote>
+<h3 id="1-2-配布フォルダを置く">1-2. 配布フォルダを置く</h3>
+<p>受け取った一式を、パスに空白や日本語を含まない場所（例：<code>C:\Subtext</code>）へ展開します。
+中に <code>Subtext.sln</code> と <code>dist</code> フォルダがあることを確認してください。</p>
+<p><code>dist</code> には録音（<code>dist\recorder</code>）とライブ字幕（<code>dist\live</code>）の実行ファイルが入っています。
+これがあるため、この PC に <code>.NET SDK</code> を入れる必要はありません。</p>
+<blockquote>
+<p><strong>「このシステムではスクリプトの実行が無効になっている」と出たら</strong></p>
+<p>zip やファイル共有で受け取ると、Windows が <code>.ps1</code> に「別の PC から来たファイル」の印を付けて実行を止めます。次を1回流すと外れます。</p>
+<pre><code class="language-powershell">Unblock-File -Path scripts\*.ps1
+</code></pre>
+</blockquote>
+<h3 id="1-3-セットアップスクリプトを1回流す">1-3. セットアップスクリプトを1回流す</h3>
+<pre><code class="language-powershell">pwsh -NoProfile -File scripts/bootstrap.ps1
+</code></pre>
+<p>これで Python 環境の用意、<code>.env</code> の雛形コピー、<code>data/</code> フォルダ作成まで済みます。
+uv が入っていないとここで停止します（1-1 に戻ってください）。</p>
+<h3 id="1-4-env設定ファイルを埋める">1-4. <code>.env</code>（設定ファイル）を埋める</h3>
+<p>配布フォルダの直下に <code>.env</code> が作られます。
+<strong>最低限これだけ</strong>埋めてください（値は情報システム担当や CDK デプロイ結果から受け取る）。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>項目</th>
+<th>いつ必要</th>
+<th>補足</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>S3_BUCKET</code></td>
+<td>経路 A / C（文字起こしを使う時）</td>
+<td>文字起こし用のバケット名</td>
+</tr>
+<tr>
+<td><code>BEDROCK_MODEL_ID</code></td>
+<td>Bedrock で要約する時</td>
+<td>東京リージョンで有効化済みのモデル ID</td>
+</tr>
+<tr>
+<td><code>AWS_REGION</code></td>
+<td>既定 <code>ap-northeast-1</code> のままで可</td>
+<td></td>
+</tr>
+<tr>
+<td><code>SLACK_BOT_TOKEN</code></td>
+<td>Slack へ投稿する時</td>
+<td><code>xoxb-</code> で始まる Bot Token。<strong>bootstrap では作られないので手で追記</strong>する</td>
+</tr>
+</tbody>
+</table></div>
+<blockquote>
+<p><strong>重要（機密の扱い）</strong></p>
+<ul>
+<li><code>.env</code> に AWS のパスワードやアクセスキーは<strong>書かない</strong>。AWS 認証は「AWS プロファイル / SSO」で通す（担当者に確認）。</li>
+<li><code>.env</code> はコミット（Git に登録）しない。会議の音声・実名などの個人情報は<strong>社外に出さない</strong>方針です。</li>
+</ul>
+</blockquote>
+<blockquote>
+<p><strong>Slack 投稿（§2-6）を使うなら</strong>：<code>SLACK_BOT_TOKEN</code>（<code>xoxb-</code> で始まる Bot Token）を手で追記します。これが無いと投稿だけが失敗します。Claude Code の Slack プラグインは使いません（Bot Token で直接投稿します）。</p>
+</blockquote>
+<h3 id="1-5経路-c-を使う時のみffmpeg-を入れる">1-5.（経路 C を使う時のみ）ffmpeg を入れる</h3>
+<p>録画 mp4 から音声を抜くのに <code>ffmpeg</code> が必要です。
+未導入なら以下（Windows・scoop 利用時）。</p>
+<pre><code class="language-bash">scoop install ffmpeg
+</code></pre>
+<p>入っているか確認：<code>ffmpeg -version</code> が表示されれば OK。
+画面から mp4 を取り込むときは、長さの測定にも同梱の <code>ffprobe</code> を使います。</p>
+<h3 id="1-6-aws-にログインできているか経路-a--c">1-6. AWS にログインできているか（経路 A / C）</h3>
+<p>文字起こし・要約は AWS を使います。
+会議の前に、AWS プロファイル/SSO でログイン済みか担当者に確認してください（未ログインだと途中で失敗します）。</p>
+<blockquote>
+<p><strong>最後に、本番前の動作確認を1回してください。</strong>
+§2 の手順で1分だけ録音してみて、録音が始まることを確かめておきます。会議直前に起動しないと気づいても、その日の音声は取り返せません。</p>
+</blockquote>
+<h2 id="2-画面で進めるtui">2. 画面で進める（TUI）</h2>
+<p>録音から Slack 投稿までを1つの画面で進めます。
+通常の運用はこの章だけで足ります。</p>
+<h3 id="2-1-起動する">2-1. 起動する</h3>
+<p>配布フォルダで、<strong>通常のターミナル</strong>から：</p>
+<pre><code class="language-bash">uv run meeting tui
+</code></pre>
+<blockquote>
+<p><strong>注意</strong>：<strong>Claude Code のセッション内からは起動しないでください</strong>。録音は WASAPI（Windows の音声層）を使うため、通常のターミナルで動かす必要があります。</p>
+</blockquote>
+<h3 id="2-2-画面の見方">2-2. 画面の見方</h3>
+<ul>
+<li><strong>一覧</strong>：セッション番号、セッション名、今どの段か、録音状態、録音長（<code>self</code> / <code>others</code> の秒数）。取込由来のセッションは録音長が <code>-</code> になります。</li>
+<li><strong>上部の帯</strong>：<code>01 録音</code> → <code>02 取込</code> → <code>03 議事録</code> → <code>04 共有</code> の4段。選択中のセッションが今どこにいるかを示します。</li>
+<li><strong>右上のコスト</strong>：<code>今月 $x.xx / $y.yy</code>（今月の累計と月次上限）。</li>
+<li><strong>ログ</strong>：実行中の見積・進捗・エラーがここに出ます。<code>Ctrl+L</code> で一覧を隠してログを広げられます。</li>
+</ul>
+<p>キー操作（画面下部にも出ます）：</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>キー</th>
+<th>操作</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>r</code></td>
+<td>録音の開始／停止</td>
+</tr>
+<tr>
+<td><code>i</code></td>
+<td>取込（VTT / mp4）</td>
+</tr>
+<tr>
+<td><code>m</code></td>
+<td>議事録作成</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>Slack 投稿</td>
+</tr>
+<tr>
+<td><code>x</code></td>
+<td>セッション削除</td>
+</tr>
+<tr>
+<td><code>Ctrl+R</code></td>
+<td>一覧の再読込</td>
+</tr>
+<tr>
+<td><code>Ctrl+L</code></td>
+<td>ログの拡大／縮小</td>
+</tr>
+<tr>
+<td><code>Ctrl+P</code></td>
+<td>コマンドパレット（Claude 経路の切替に使う。§2-7）</td>
+</tr>
+<tr>
+<td><code>q</code></td>
+<td>終了</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="2-3-録音する経路-a">2-3. 録音する（経路 A）</h3>
+<p>会議が始まる前に、左端の入力欄に<strong>録音する分数</strong>を入れて（既定 180 分）、<code>r</code>（または「録音開始」）を押します。</p>
+<ul>
+<li>出力先：<code>data/recordings/&lt;日時&gt;/</code>（<code>self.wav</code>＝自分, <code>others.wav</code>＝相手, <code>manifest.json</code> など）。</li>
+<li>録音には <code>dist\recorder</code> の実行ファイルを使います。押しても録音が始まらない場合は §7 を見てください。</li>
+<li>会議が終わったら、もう一度 <code>r</code>（「停止」）を押します。指定した分数に達すると自動でも止まります。</li>
+<li><strong>画面を閉じると、録音中なら自動で安全停止</strong>してから閉じます（消し忘れ防止）。15 秒待って止まらない場合は強制終了するため、<code>manifest.json</code> が不完全になることがあります。通常は <code>r</code> で止めてから終了してください。</li>
+</ul>
+<h3 id="2-4-字幕録画を取り込む経路-b--c">2-4. 字幕・録画を取り込む（経路 B / C）</h3>
+<p><code>i</code>（「取込 VTT/mp4」）を押し、ファイルのパスを入力します。
+拡張子で自動的に振り分かれるので、<code>.vtt</code> と <code>.mp4</code> のどちらでも同じ操作です。</p>
+<ul>
+<li>Windows の「パスのコピー」で付く前後の <code>&quot;</code> はそのまま貼って構いません（自動で外します）。</li>
+<li><strong><code>.mp4</code> の場合</strong>：<code>ffprobe</code> で長さを測り、文字起こしの概算コストをログに出してから変換に入ります。長さが測れない場合（ffmpeg 未導入、音声の無い mp4 など）は、<strong>課金される段に入る前に中止</strong>します。ログの案内に従って ffmpeg を入れてください。</li>
+<li><code>.vtt</code> の場合は文字起こしを使わないので、この段の AWS 課金はありません。</li>
+<li>取り込むと、そのまま話者名ゲート（§2-5）へ進みます。</li>
+</ul>
+<blockquote>
+<p><strong>取込セッションは画面を再起動すると続けられません。</strong> 画面は取り込んだファイルの場所を記憶に留めるだけで保存しないため、再起動後に議事録を作り直したい場合は「取込」から同じファイルを指定し直してください（mp4 の場合は、変換済みの <code>.vtt</code> を指定すれば文字起こしの再課金を避けられます）。</p>
+</blockquote>
+<h3 id="2-5-議事録を作る">2-5. 議事録を作る</h3>
+<p><code>m</code>（「議事録作成」）を押します。
+録音経路（§2-3）の場合はここから、取込（§2-4）の場合は取込に続けて自動で進みます。</p>
+<p><strong>話者名の記入モーダルが開きます。</strong>
+「spk_0 は誰か」を人間が確定させるための安全弁（話者名ゲート）で、必ず1回止まります。</p>
+<ol>
+<li>話者ラベルごとに、発話数と代表的な発言がいくつか表示されます。</li>
+<li>それを手がかりに、<strong>実名や役割</strong>を入力します。誰か分からない話者は、分かる範囲（例：「進行役」「お客様A」）で構いません。</li>
+<li>空欄にしたラベルは <code>spk_0</code> などの表記のまま議事録に残ります。</li>
+<li>「保存して続行」を押すと、<strong>そのまま議事録の生成まで自動で進みます</strong>。完了すると <code>data/out/&lt;セッション&gt;/minutes.md</code> ができます。</li>
+</ol>
+<ul>
+<li>実名と代表発言は<strong>モーダルの中だけに表示</strong>され、ログには記入件数しか出ません。</li>
+<li>中止した場合は議事録は作られません。<code>m</code> を押せば同じところから再開できます。</li>
+<li>自動で続きに進むのは1セッションにつき1回までです。2回目以降は <code>m</code> を押し直してください。</li>
+<li>記入した内容は <code>data/out/&lt;セッション&gt;/speaker_names.json</code> に保存されます。ファイルを直接編集したい場合は §3 を参照。</li>
+</ul>
+<blockquote>
+<p>話者名の記入は手元のファイルを書くだけで、外部送信はありません。</p>
+</blockquote>
+<h3 id="2-6-slack-へ投稿する">2-6. Slack へ投稿する</h3>
+<p><code>minutes.md</code> ができたセッションを選び、<code>s</code>（「Slack投稿」）を押します。</p>
+<ol>
+<li><strong>投稿プレビュー</strong>と投稿先チャンネル ID の入力欄が出ます（<code>meeting.toml</code> に既定チャンネルがあれば入力済み）。</li>
+<li>中身を確認して「投稿する」を押すと投稿します。<code>Esc</code> で中止。</li>
+<li>投稿スタイルは、<strong>親メッセージ</strong>＝要約（日時タイトル・決定事項・主な ToDo）、<strong>スレッド返信</strong>＝<code>minutes.md</code> の全文（長い場合は分割）。</li>
+</ol>
+<ul>
+<li>チャンネルは<strong>ID</strong>（<code>C</code> で始まる文字列。チャンネル詳細の最下部で確認）で指定します。チャンネル名（<code>#general</code> など）では通りません。</li>
+<li>この経路は Claude／Anthropic を経由しないため、<strong>議事録の中身が社外へ出ません</strong>。</li>
+<li><code>SLACK_BOT_TOKEN</code> が未設定だとここで失敗します（§1-4）。</li>
+<li><strong>再投稿の注意</strong>：投稿の冪等性は実装していません。同じセッションで2回押すと、親メッセージと全文がもう一度投稿されます。</li>
+</ul>
+<h3 id="2-7-claude-生成に切り替える">2-7. Claude 生成に切り替える</h3>
+<p>ボタンとキー操作は <strong>Bedrock 固定</strong>です。
+議事録の文章化を Claude に任せたい場合は、<code>Ctrl+P</code> でコマンドパレットを開いて次を選びます（判断基準は §4）。</p>
+<ul>
+<li><strong>議事録を生成 (Claude)</strong></li>
+<li><strong>取込 VTT/mp4 (Claude)</strong></li>
+</ul>
+<p>この経路は <code>final_transcript.json</code> を作った時点で正常終了し、<strong><code>minutes.md</code> はできません</strong>。
+続きの文章化の手順は §5-7 と同じです（ログにも同じ案内が出ます）。</p>
+<h3 id="2-8-画面でできないこと">2-8. 画面でできないこと</h3>
+<p>次の操作はコマンド（§5）で行います。</p>
+<ul>
+<li><strong>ライブ字幕</strong>の開始 → <code>uv run meeting live</code>（§5-6）</li>
+<li><strong>課金ゼロで止める運用</strong>（<code>--no-summarize</code>）→ §5-2</li>
+<li><strong>過去の月のコスト明細</strong>を見る → <code>uv run meeting cost --month 2026-07</code>（§6）</li>
+<li><strong>議事録だけ作り直す</strong>（段を指定した再実行）→ §7 の表</li>
+</ul>
+<p>なお、セッション削除（<code>x</code>）は録音フォルダと出力フォルダを消します。
+コスト台帳（<code>cost-ledger.jsonl</code>）の記録は監査のため残ります。
+確認画面で <code>y</code> を押すと削除され、<strong>取り消せません</strong>（<code>n</code> または <code>Esc</code> で中止）。</p>
+<h2 id="3共通話者名の確認話者名ゲート">3.［共通］話者名の確認（話者名ゲート）</h2>
+<p>どの経路でも、<strong>議事録を作る前に必ず1回止まります</strong>。
+これは「<code>spk_0</code> は誰の発言か」を人間が確定させるための安全弁です。</p>
+<p>画面（TUI）ではモーダルが開き、記入するとそのまま続きが走ります（§2-5）。
+コマンド（CLI）で <code>subtext-postmeeting</code> を直接使った場合は、ファイルを自分で編集します。</p>
+<ol>
+<li>止まると <code>data/out/&lt;セッション&gt;/speaker_names.json</code> が作られます。</li>
+<li>このファイルを開き、話者ラベル（<code>spk_0</code>, <code>spk_1</code> …）に<strong>実名や役割</strong>を記入します。
+<ul>
+<li>経路 B/C では VTT に入っていた名前が初期値として入っていることがあります。中身を確認・補正してください。</li>
+<li>誰か分からない話者は、分かる範囲（例：「進行役」「お客様A」）で構いません。</li>
+</ul>
+</li>
+<li>保存したら、<strong>直前に実行したコマンドを再実行</strong>します。今度はゲートを通過して <code>minutes.md</code> まで進みます。</li>
+</ol>
+<blockquote>
+<p>話者名の記入そのものはローカルのファイル（<code>speaker_names.json</code>）を編集するだけで、外部送信はありません。
+ただし割り当てを <strong>Claude Code に手伝ってもらう</strong>場合は、Claude が発言内容（実名入りトランスクリプト）を読むため <strong>Anthropic 側へ送信されます</strong>。Bedrock 経路を選んで PII を社外に出さない運用にしているなら、話者名は手作業で記入してください。</p>
+</blockquote>
+<h2 id="4-要約バックエンドの選び方bedrock-か-claude-か">4. 要約バックエンドの選び方（Bedrock か Claude か）</h2>
+<p>議事録の「文章化」を誰にやらせるかで2通りあります。
+<strong>どちらを使うかは情報の取り扱い方針で決めてください</strong>。</p>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>方式</th>
+<th>画面での選び方</th>
+<th>コマンド</th>
+<th>データの行き先</th>
+<th>向いている場面</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Bedrock（既定）</strong></td>
+<td><code>m</code> / <code>i</code>（ボタン）</td>
+<td><code>meeting minutes</code></td>
+<td>文字起こしも要約も<strong>自社 AWS 内（日本国内）に留まる</strong></td>
+<td>個人情報を社外に出したくない通常運用</td>
+</tr>
+<tr>
+<td><strong>Claude 生成</strong></td>
+<td><code>Ctrl+P</code> から選択（§2-7）</td>
+<td><code>meeting minutes --claude</code> / <code>--no-summarize</code></td>
+<td>実名入りトランスクリプトが <strong>Anthropic 側へ送信される</strong></td>
+<td>ガバナンス上問題ない、Claude の文章品質を使いたい時</td>
+</tr>
+</tbody>
+</table></div>
+<ul>
+<li>判断に迷う場合は既定（Bedrock）を選んでください。</li>
+<li>Bedrock 経路は <code>minutes.md</code> まで自動で作られます。<strong>Claude 生成経路は <code>final_transcript.json</code> で止まる</strong>ため、文章化のひと手間が別に必要です（§5-7）。</li>
+<li><strong>Claude 生成経路では用語補正（固有名詞の表記直し）が効きません。</strong> 課金をゼロにするために要約段と一緒に自動でスキップされるためです。社名・製品名・人名の表記を揃えたい場合は、Claude に文章化を頼むときに正しい表記の一覧も一緒に渡してください（<code>tools/correction/terms.json</code> の <code>canonical</code> がその一覧です）。表記の正確さを重視するなら Bedrock 経路を選ぶほうが確実です。</li>
+<li>どちらの経路でも議事録の見出しは統一（<code>## 決定事項</code> / <code>## ToDo</code> / <code>## 論点・議論サマリ</code>）。トランスクリプトに無い情報は創作されません。</li>
+<li>（この表とデータの行き先の「正」は <code>.claude/skills/subtext-meeting/SKILL.md</code> ステップ3。ガバナンス変更時はそちらを先に更新する。）</li>
+</ul>
+<h2 id="5-コマンドで細かく操作するcli">5. コマンドで細かく操作する（CLI）</h2>
+<p>画面（§2）で足りる範囲はここを読む必要はありません。
+セッションや段を明示して実行したい場合、課金をゼロに抑えたい場合、ライブ字幕を使う場合にここを見てください。</p>
+<blockquote>
+<p><strong>注意</strong>：これらのコマンドは<strong>あなた自身が普通のターミナルで実行</strong>します。特に<strong>録音とライブ字幕は Claude Code のセッション内からは起動できません</strong>。文字起こし・要約は AWS 課金を伴うため、ターミナルから実行して <code>cost-ledger.jsonl</code> に記録します。</p>
+</blockquote>
+<h3 id="5-1-経路a録音して議事録を作る">5-1. 経路A：録音して議事録を作る</h3>
+<pre><code class="language-bash">uv run meeting record 60     # 最大 60 分録る（省略時は 180 分）
+uv run meeting stop          # 別のターミナルから停止
+uv run meeting status        # 今どの段かをファイルの有無から判定
+uv run meeting minutes       # 最新セッションを Bedrock で議事録まで
+</code></pre>
+<ul>
+<li><code>stop</code> は停止の合図ファイルを置くだけの安全な操作です。録音側がこれを検知して安全に止まり、<code>manifest.json</code> を確定します。</li>
+<li>セッションを指定する場合：<code>uv run meeting minutes 20260704-140000</code></li>
+<li>実行時に「今回の概算コスト／今月の累計／上限」を表示し、<code>cost-ledger.jsonl</code> に記録します。上限超過は<strong>警告のみ</strong>（止まりません）。</li>
+</ul>
+<p>▶ ここで<strong>話者名ゲート</strong>で1回止まります（「話者名の記入が必要です（BR-NAME-01）」と表示）。
+<a href="#3共通話者名の確認話者名ゲート">話者名の確認</a>を済ませたら、<strong>セッションを明示して</strong>再実行します（<code>uv run meeting minutes &lt;セッション&gt;</code>）。
+引数を省くと<strong>最後に更新されたセッション</strong>が対象になります。
+録音セッションだけでなく取込由来のセッション（<code>Recording</code>、<code>live_captions</code> など）も候補に入るため、待っている間に別の録音や取込があるとそちらへ向かいます。
+<code>uv run meeting status</code> で確認したセッション名を渡すのが安全です。</p>
+<h3 id="5-2-経路b字幕webvttから議事録を作る">5-2. 経路B：字幕（WebVTT）から議事録を作る</h3>
+<p>Teams 等が出力した字幕ファイル <code>meeting.vtt</code> が手元にある場合。
+<strong>録音・文字起こしが不要</strong>で、いちばん安く速い経路です。</p>
+<pre><code class="language-bash"># 1回目：話者名ゲートで止まる（VTT 内の話者名が初期値として入る）
+uv run subtext-postmeeting --mode vtt --vtt meeting.vtt
+</code></pre>
+<p>▶ 話者名ゲートで止まる → <a href="#3共通話者名の確認話者名ゲート">話者名の確認</a>へ。
+名前を確認・補正したら <strong>同じコマンドをもう一度</strong>実行 → <code>minutes.md</code> が完成します。</p>
+<p><strong>AWS 課金を完全にゼロにしたい</strong>場合は <code>--no-summarize</code> を付けます。
+要約段だけでなく用語補正（C2）段も自動でスキップし、<code>final_transcript.json</code> まで作って止まります（Bedrock を一切呼ばないので <code>BEDROCK_MODEL_ID</code> も不要）。
+議事録の文章化は Claude Code 側に任せられます（§5-7）。</p>
+<pre><code class="language-bash">uv run subtext-postmeeting --mode vtt --vtt meeting.vtt --no-summarize
+</code></pre>
+<h3 id="5-3-経路c録画mp4から議事録を作る">5-3. 経路C：録画（mp4）から議事録を作る</h3>
+<p>会議の録画 <code>recording.mp4</code> しか残っていない場合。
+ffmpeg で音声を抜き、文字起こしして VTT を作り、経路 B に合流します。</p>
+<pre><code class="language-bash"># ffmpeg で音声抽出 → 文字起こし → recording.vtt を生成
+uv run subtext-mp4-to-vtt recording.mp4
+
+# あとは経路 B と同じ
+uv run subtext-postmeeting --mode vtt --vtt recording.vtt
+</code></pre>
+<ul>
+<li>事前に <strong>ffmpeg が必要</strong>（<a href="#1-5経路-c-を使う時のみffmpeg-を入れる">1-5</a>）。</li>
+<li><strong>変換ステップの AWS 課金は文字起こし（Transcribe）のみ</strong>（この後の議事録化で要約段の課金があり得ます）。抽出した音声は一時ファイルとして自動で消えます。</li>
+<li>▶ 話者名ゲート → <a href="#3共通話者名の確認話者名ゲート">話者名の確認</a> → 同じコマンド再実行で <code>minutes.md</code> 完成。</li>
+</ul>
+<h3 id="5-4-対話1コマンドでまとめて進めるprocess">5-4. 対話1コマンドでまとめて進める（process）</h3>
+<p>話者名の記入とファイル編集を自分でやらずに済ませたい場合は、<code>minutes</code> の代わりに <code>process</code> を使います。
+画面（§2-5）の話者名モーダルに相当する流れを、ターミナルの対話で行います。</p>
+<pre><code class="language-bash">uv run meeting process              # 最新セッション。話者名を対話で聞き、そのまま議事録まで進む
+uv run meeting process 20260704-140000 --channel C0123456789
+</code></pre>
+<ul>
+<li>話者名ゲートで止まる代わりに、<strong>話者ごとの代表発言を見せながら名前を聞いてくれます</strong>。入力すると <code>speaker_names.json</code> に書き戻し、自動で続きを実行します。</li>
+<li>最後に Slack 投稿を提案します（<code>--channel</code> を省くと投稿先を対話で聞きます）。投稿するかどうかは必ず確認されます。</li>
+</ul>
+<h3 id="5-5-slack-へ投稿する">5-5. Slack へ投稿する</h3>
+<p><code>data/out/&lt;セッション&gt;/minutes.md</code> が出来たら Slack へ共有します。</p>
+<blockquote>
+<p><strong>Slack 投稿は人間の承認が必須</strong>です。宛先チャンネルと投稿文を確認してから投稿します（自動投稿はしません）。</p>
+</blockquote>
+<pre><code class="language-bash">uv run meeting slack --channel C0123456789          # 最新セッション
+uv run meeting slack 20260704-140000 --channel C0123456789
+</code></pre>
+<p>投稿前にプレビューが出て <code>y/N</code> を聞かれます。
+<code>y</code> 以外なら投稿しません。
+この経路は Claude／Anthropic を経由しないため、<strong>議事録の中身が社外（Anthropic）へ出ません</strong>。</p>
+<ul>
+<li><code>--channel</code> を省略すると <code>meeting.toml</code> の既定チャンネル、それも無ければ対話で聞きます。</li>
+<li><code>meeting process</code>（§5-4）を使った場合は、最後に投稿するかを聞かれるのでこの手順は不要です。</li>
+<li>投稿スタイルと再投稿の注意は §2-6 と同じです。</li>
+</ul>
+<p><strong>Claude Code に文面を作らせる</strong>こともできます。
+<code>/subtext-slack</code> を使うと、<code>minutes.md</code> を読んで投稿文案と宛先を提示 → <strong>あなたが承認 → 投稿</strong> → 投稿リンクを報告、という流れになります。
+文面を練りたい時に向きますが、<strong>議事録の内容が Anthropic 側へ送信される</strong>点は Claude 生成経路と同じです。</p>
+<h3 id="5-6-ライブ字幕の記録から議事録を作る">5-6. ライブ字幕の記録から議事録を作る</h3>
+<p>会議中にライブ字幕を流していた場合、その確定字幕から議事録を作れます。
+録音（経路 A）の代わりにはなりますが、字幕確定までの遅延があるため精度は録音経路に劣ります。
+<strong>この操作は画面（TUI）にはありません。</strong></p>
+<pre><code class="language-bash"># 会議中: ライブ字幕を画面に出しつつ、確定字幕を記録する（このターミナルを占有します）
+uv run meeting live
+</code></pre>
+<p>起動時に<strong>このライブ字幕専用のセッション名</strong>と JSONL の場所が表示されるので、控えてください（録音セッションとは別に採番されます）。
+会議が終わったら、そのターミナルで <code>Ctrl+C</code> を押して止めます。
+終了時に、続きのコマンドがそのまま画面に出ます。</p>
+<pre><code class="language-bash"># 会議後: 記録した JSONL を VTT に変換する
+uv run subtext-live-to-vtt data/out/&lt;セッション&gt;/live_captions.jsonl
+
+# 以降は経路 B と同じ
+uv run subtext-postmeeting --mode vtt --vtt data/out/&lt;セッション&gt;/live_captions.vtt
+</code></pre>
+<ul>
+<li>ライブ字幕は<strong>通常のターミナル</strong>で起動します（録音と同じ理由）。</li>
+<li><strong><code>uv run meeting stop</code> では止まりません</strong>（あれは録音用）。別のターミナルから止めたい場合は <code>data/out/&lt;セッション&gt;/.stop</code> という空ファイルを作ります。</li>
+<li>AWS 課金は、会議中に Transcribe のストリーミング分が発生します。会議後の議事録化で要約段の課金が追加されます（<code>--no-summarize</code> ならゼロ）。</li>
+</ul>
+<h3 id="5-7claude-生成を選んだ場合議事録の文章化">5-7.（Claude 生成を選んだ場合）議事録の文章化</h3>
+<p>Claude 生成経路（画面の <code>Ctrl+P</code> メニュー、<code>--claude</code>、<code>--no-summarize</code>）は <code>final_transcript.json</code> を作った時点で正常終了します。
+<strong>この時点では <code>minutes.md</code> はまだありません</strong>。</p>
+<p>続けて Claude Code に <code>data/out/&lt;セッション&gt;/final_transcript.json</code> を読ませ、議事録の文章化を依頼してください（ログにも同じ案内が出ます）。
+生成された内容を <code>data/out/&lt;セッション&gt;/minutes.md</code> として保存すれば、以降の Slack 投稿は Bedrock 経路と同じ手順になります。</p>
+<p>このとき、<strong>トランスクリプトの固有名詞は補正されていません</strong>（用語補正が要約段と一緒にスキップされるため）。
+依頼のときに正しい表記の一覧（<code>tools/correction/terms.json</code> の <code>canonical</code>）も渡すと、社名・製品名の表記ゆれを抑えられます。</p>
+<h2 id="6-コストと注意点">6. コストと注意点</h2>
+<ul>
+<li>
+<p><strong>AWS 課金が出る操作</strong>：文字起こし（経路 A・C）、Bedrock 要約（既定）、用語補正（C2）段の Bedrock（既定で有効）。ただし <code>--no-summarize</code> を付けると要約段と補正段の両方が自動でスキップされるため、経路 B は <code>--no-summarize</code> で課金ゼロ。</p>
+</li>
+<li>
+<p>議事録の生成は、画面からでもコマンドからでも実行のたびに概算を <code>tools/meeting/cost-ledger.jsonl</code> に記録します。累計は画面の右上に出るほか、次で確認できます。</p>
+<pre><code class="language-bash">uv run meeting cost              # 今月のサマリ
+uv run meeting cost --month 2026-07
+</code></pre>
+</li>
+<li>
+<p>表示額は<strong>概算</strong>です。正確な請求額は AWS Cost Explorer を確認してください。</p>
+</li>
+<li>
+<p>上限（既定：単発 $5 / 月次 $50。改定は <code>tools/meeting/meeting.toml</code> の <code>[thresholds]</code> で行う）を超えると<strong>警告が出ますが処理は止まりません</strong>。想定外に高い時は担当者へ。</p>
+</li>
+<li>
+<p>mp4 の取込は、長さが測れない場合に<strong>課金される段へ入る前に中止</strong>します（§2-4）。</p>
+</li>
+</ul>
+<h2 id="7-困ったときはトラブルシューティング">7. 困ったときは（トラブルシューティング）</h2>
+<div class="table-wrap"><table>
+<thead>
+<tr>
+<th>症状</th>
+<th>対処</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>話者名の記入モーダルが出た／「話者名の記入が必要です」で止まった</td>
+<td>正常です（話者名ゲート）。画面なら記入して「保存して続行」（§2-5）、コマンドなら<a href="#3共通話者名の確認話者名ゲート">話者名の確認</a>を済ませて再実行（経路 A はセッション名を明示）。</td>
+</tr>
+<tr>
+<td>録音が起動直後に失敗する</td>
+<td>普通のターミナルで実行していますか？ Claude Code セッション内からは録音できません。</td>
+</tr>
+<tr>
+<td>画面を再起動したら取込セッションの議事録が作れない</td>
+<td>取り込んだファイルの場所は保存されません。「取込」から同じファイル（mp4 は変換済みの <code>.vtt</code>）を指定し直してください（§2-4）。</td>
+</tr>
+<tr>
+<td>mp4 取込が「長さを取得できませんでした」で止まる</td>
+<td><code>ffmpeg -version</code> が通るか確認（<a href="#1-5経路-c-を使う時のみffmpeg-を入れる">1-5</a>）。音声トラックの無い mp4 でも起きます。課金前に止めているので余分な請求はありません。</td>
+</tr>
+<tr>
+<td>文字起こしで AWS エラー</td>
+<td>AWS にログイン済みか、<code>.env</code> の <code>S3_BUCKET</code> が入っているか確認。</td>
+</tr>
+<tr>
+<td>要約で失敗（Bedrock）</td>
+<td><code>.env</code> の <code>BEDROCK_MODEL_ID</code> が東京で有効なモデルか確認。</td>
+</tr>
+<tr>
+<td>どのセッションか分からない</td>
+<td>画面の一覧、または <code>uv run meeting status</code> で現在地を確認。録音は <code>data/recordings/</code>、議事録は <code>data/out/</code> にある。</td>
+</tr>
+<tr>
+<td>議事録だけ作り直したい（Bedrock 経路）</td>
+<td>経路 A：<code>uv run subtext-postmeeting --mode paired --session data/recordings/&lt;セッション&gt; --stage summarized</code>／経路 B・C：<code>uv run subtext-postmeeting --mode vtt --vtt &lt;ファイル&gt; --stage summarized</code></td>
+</tr>
+<tr>
+<td>Slack 投稿だけ失敗する（<code>SLACK_BOT_TOKEN が未設定です</code>）</td>
+<td>ルート <code>.env</code> に <code>SLACK_BOT_TOKEN</code>（<code>xoxb-</code> で始まる値）を追記。<code>.env.example</code> から新規作成した場合は空欄なので手で入れる（§1-4）。</td>
+</tr>
+<tr>
+<td>Slack 投稿で <code>channel_not_found</code></td>
+<td>まず<strong>プライベートチャンネルなら Bot を招待</strong>してください（対象チャンネルで <code>/invite @&lt;Bot名&gt;</code>）。プライベートは参加していないと存在ごと隠されるため、このエラーになります。パブリックチャンネルは招待なしで投稿できる設定なので、そこで出る場合はチャンネル<strong>ID</strong>（<code>C</code> で始まる文字列。チャンネル詳細の最下部で確認）が誤っています。チャンネル名（<code>#general</code> など）では通りません。</td>
+</tr>
+<tr>
+<td>Claude 経路を選んだら <code>minutes.md</code> が出来ない</td>
+<td>仕様です。Claude 生成経路は <code>final_transcript.json</code> で止まります（§5-7）。</td>
+</tr>
+<tr>
+<td>話者名を直したのに議事録に反映されない</td>
+<td>一度通過した実名割当は再利用されます。<code>uv run subtext-postmeeting --mode paired --session data/recordings/&lt;セッション&gt; --stage named</code> で割当からやり直してください。</td>
+</tr>
+</tbody>
+</table></div>
+<h2 id="付録コマンド早見表">付録：コマンド早見表</h2>
+<p>すべて<strong>配布フォルダ</strong>で実行。</p>
+<pre><code class="language-bash"># --- 通常はこれ1つ（録音・取込・議事録・Slack を画面で。ライブ字幕を除く）---
+uv run meeting tui
+
+# --- 経路A：録音経路 ---
+uv run meeting record 60          # 録音開始（分指定。省略時 180 分）
+uv run meeting stop               # 録音停止
+uv run meeting status             # 現在地の確認
+uv run meeting minutes            # 議事録生成（Bedrock 要約, 既定）
+uv run meeting minutes --claude   # 議事録生成（Claude 生成。final_transcript.json で停止）
+uv run meeting process            # 話者名を対話で聞いて議事録→Slack まで
+uv run meeting cost               # コスト月次サマリ
+
+# --- Slack 投稿（生成済み議事録を投稿。プレビュー＋y/N 承認）---
+uv run meeting slack --channel C0123456789
+
+# --- 経路B：WebVTT 直接 ---
+uv run subtext-postmeeting --mode vtt --vtt meeting.vtt                 # 議事録まで
+uv run subtext-postmeeting --mode vtt --vtt meeting.vtt --no-summarize  # 要約は Claude に任せる
+
+# --- 経路C：録画 mp4 → VTT ---
+uv run subtext-mp4-to-vtt recording.mp4                                 # mp4→VTT
+uv run subtext-postmeeting --mode vtt --vtt recording.vtt               # 以降は経路B と同じ
+
+# --- ライブ字幕とその記録から議事録（画面にはない）---
+uv run meeting live                                                     # 会議中（Ctrl+C で停止）
+uv run subtext-live-to-vtt data/out/&lt;セッション&gt;/live_captions.jsonl     # JSONL→VTT
+</code></pre>
+<blockquote>
+<p>より詳しい仕様・ガバナンスは <code>CLAUDE.md</code> と <code>.claude/skills/subtext-meeting/SKILL.md</code> を参照。</p>
+</blockquote>
+
+</main>
+
+</div>
+</body>
+</html>

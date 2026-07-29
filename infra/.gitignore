@@ -1,0 +1,7 @@
+cdk.out/
+cdk-outputs.json
+.venv/
+__pycache__/
+*.pyc
+# aws-cdk CLI のローカル固定（package.json/package-lock.json は追跡、依存実体は除外）
+node_modules/

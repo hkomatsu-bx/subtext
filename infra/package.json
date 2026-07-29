@@ -1,0 +1,16 @@
+{
+  "name": "subtext-infra",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Subtext PoC インフラ（AWS CDK）の CLI 起動用。構成本体は Python（app.py / stacks/）。ここは aws-cdk CLI をプロジェクトローカルに固定するためだけに置く。",
+  "scripts": {
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "aws-cdk": "2.1128.1"
+  },
+  "volta": {
+    "node": "26.3.0",
+    "npm": "11.17.0"
+  }
+}

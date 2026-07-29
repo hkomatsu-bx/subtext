@@ -1,0 +1,10 @@
+{
+  "_comment": "C2 LLM 後処理補正の用語リスト（FR-C2-06 / DG-C2-5）。canonical=正規表記、aliases=既知の誤認識。tools/vocab/ja-terms.txt から種まきし、実会議で観測した誤認識（受け入れ AC-C1-02 の bx/ベトロック 等）を追記する。aliases は ASCII は語境界付き・大小無視、和文は最長一致で置換される。和文は語境界を判定できず部分一致するため 3 文字以上が必須（2 文字の『イジ』は『エンゲイジメント』『ペイジ』『デイジー』の内側に当たって本文を壊したため削除した。短い誤認識は辞書段ではなく LLM 段に任せる）。",
+  "terms": [
+    {"canonical": "BeeX", "aliases": ["bx", "ビーエックス", "びーえっくす"]},
+    {"canonical": "Bedrock", "aliases": ["ベドロック", "ベッドロック", "ベトロック"]},
+    {"canonical": "1G", "aliases": ["イチジー"]},
+    {"canonical": "2G", "aliases": ["ニジー"]},
+    {"canonical": "Subtext", "aliases": ["サブテキスト"]}
+  ]
+}

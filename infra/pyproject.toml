@@ -1,0 +1,13 @@
+[project]
+# Subtext PoC インフラ（AWS CDK / Python, Q8=B）。S3(暗号化/公開遮断/7日/TLS) と
+# 最小権限 IAM をコード化する。Unit B アプリ(src/postmeeting)とは独立した uv プロジェクト。
+name = "subtext-infra"
+version = "0.1.0"
+description = "Subtext PoC infrastructure (AWS CDK Python): S3 + least-privilege IAM"
+requires-python = ">=3.13"
+# 依存は完全固定（NFR-SEC-05）。公式 PyPI のみ。
+# aws-cdk-lib 2.261 系 / constructs 10.6 系は Python 3.13 をサポート。実行環境(3.13)に整合。
+dependencies = [
+    "aws-cdk-lib==2.261.0",
+    "constructs==10.6.0",
+]

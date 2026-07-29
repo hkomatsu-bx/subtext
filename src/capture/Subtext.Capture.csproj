@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Subtext.Capture</RootNamespace>
+    <AssemblyName>Subtext.Capture</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- NFR-SEC-05: dependency pinned to exact version -->
+    <PackageReference Include="NAudio" Version="2.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- キャプチャの停止/キャンセル順序を、NAudio の状態機械を模した IWaveIn で検証するため
+         テストプロジェクトへ internal を公開する（実機 WASAPI は単体テスト対象外のまま）。 -->
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>Subtext.Recorder.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

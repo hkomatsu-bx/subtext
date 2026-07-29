@@ -1,0 +1,70 @@
+# Subtext 会議ハーネスのコスト概算・閾値設定。
+#
+# ここでの金額は「概算」であり、正確な請求額は AWS Cost Explorer を正とする。
+# 単価は改定されるため暗記せず、改定時はこのファイル1箇所を更新する。
+#
+# 出典:
+#   Transcribe: https://aws.amazon.com/transcribe/pricing/
+#               Tier1 標準 $0.024/分（バッチ/ストリーミング共通。話者分離は追加課金なし）。
+#               2026-06 時点で US East 基準値を確認（確信度: 高）。
+#               ap-northeast-1 は他の非US地域同様わずかに高い可能性があり、正確値は
+#               価格ページのリージョン選択で要確認（確信度: 中）。改定時はここを更新。
+#   Bedrock:    モデル別。下記は概算用の代表値。実 BEDROCK_MODEL_ID に合わせて改定すること。
+
+[paths]
+# レイアウト依存を1箇所に集約する（コードに直書きしない＝別PC・別構成へ移植可能に）。
+# すべてリポジトリルート（Subtext.sln のある階層）からの相対パス。
+# I/O は data/ 配下に集約: 録音は data/recordings、議事録は data/out。
+recordings_dir = "data/recordings"
+out_dir = "data/out"
+# 録音実行ファイルの探索元。TargetFramework / ビルド構成は直書きしない（環境結合を避ける）。
+# self-contained publish 出力（recorder_dist）を優先し、無ければ dev ビルド出力を
+# recorder_project/bin 配下から自動探索する（runner.resolve_recorder_exe）。
+recorder_project = "src/recorder"
+recorder_dist = "dist/recorder"
+# ライブ字幕（Unit C・B1F live 段）の探索元。録音と同方針（dist 優先→dev ビルド探索）。
+live_project = "src/live"
+live_dist = "dist/live"
+# Unit B（会議後パイプライン）のプロジェクト位置（`uv run` 解決に使う）。
+# recorder/live と違い dist 経路は持たない（TUI が uv 起動である以上、配布先でも
+# `uv sync` で Unit B が同じ .venv に入るため。runner.resolve_postmeeting_cmd）。
+postmeeting_dir = "src/postmeeting"
+
+[thresholds]
+# 単発実行の見積がこの額を超えたら警告（停止はしない）。
+per_run_usd = 5.0
+# 月次累計がこの額を超えたら警告（停止はしない）。
+monthly_usd = 50.0
+
+[pricing.transcribe]
+# paired モードは self/others の2系統とも課金される点に注意（概算側で合算する）。
+usd_per_minute = 0.024
+
+[pricing.bedrock]
+# 入出力トークン単価（USD / 1K tokens）。BEDROCK_MODEL_ID に合わせて改定。
+# 現行は jp.anthropic.claude-opus-4-8（Opus 4.8）。値は Anthropic の一次価格
+# $5 / $25 per MTok に合わせている。Bedrock は別料金体系のため、初回の実課金が出たら
+# Cost Explorer と突き合わせて改定すること（台帳は概算専用・閾値警告のみで停止しない）。
+input_usd_per_1k = 0.005
+output_usd_per_1k = 0.025
+
+[pricing.claude]
+# Claude 経路（--no-summarize）の概算。実名 PII を含むトランスクリプトを送信する経路。
+input_usd_per_1k = 0.003
+output_usd_per_1k = 0.015
+
+[slack]
+# 議事録の既定投稿先チャンネルID（任意・非秘密）。未設定なら実行時に --channel か対話入力で指定。
+# 共有・fork される追跡ファイルのため、特定チャンネルIDは直書きしない（別チームへの誤投稿を防ぐ）。
+# 環境依存の既定はローカルの .env（SLACK_BOT_TOKEN 隣）や --channel で与える。
+# Bot Token は秘密のためここには書かない（ルート .env の SLACK_BOT_TOKEN を使う。BR-SEC-01）。
+default_channel = ""
+
+[estimation]
+# 日本語の文字数→トークン概算係数（概算用。1文字 ≒ 1トークンで近似）。
+chars_per_token = 1.0
+# 議事録の出力トークン概算（要約は入力より小さい）。
+summary_output_tokens = 1500
+# C2 用語補正段の出力トークン概算。補正は全文を入力し「訂正した行だけ」を差分で返すため
+# 出力は小さい（実装上の上限は correction.py の _MAX_TOKENS=4096）。概算用の代表値。
+correction_output_tokens = 500

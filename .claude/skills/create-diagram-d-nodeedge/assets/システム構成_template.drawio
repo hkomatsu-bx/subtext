@@ -1,0 +1,145 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="task-app-arch-v1" name="システム構成（全体俯瞰）">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="820" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title -->
+        <mxCell id="title" value="タスク管理アプリ — システム構成図（全体俯瞰 / L1）" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#1A2538;" vertex="1" parent="1">
+          <mxGeometry x="300" y="16" width="600" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Boundary: Cloud (AWS) -->
+        <mxCell id="B-001" value="境界: Cloud (AWS)" style="rounded=0;dashed=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#616161;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="70" y="170" width="780" height="450" as="geometry" />
+        </mxCell>
+
+        <!-- Boundary: External -->
+        <mxCell id="B-002" value="境界: External Services" style="rounded=0;dashed=1;fillColor=#F1F8E9;strokeColor=#43A047;verticalAlign=top;align=left;spacingLeft=10;spacingTop=6;fontSize=12;fontColor=#558B2F;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="910" y="170" width="240" height="450" as="geometry" />
+        </mxCell>
+
+        <!-- Edges (drawn before boxes so they sit behind) -->
+        <mxCell id="L-001" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-100" target="C-001">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-002" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-101" target="C-001">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-003" value="内部API" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-001" target="C-002">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-004" value="SQL" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-001" target="C-010">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-005" value="Cache R/W" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-001" target="C-011">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-006" value="Enqueue" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-001" target="C-012">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-007" value="Read/Write" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-001" target="C-013">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-008" value="OAuth2.0" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-002" target="C-020">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-009" value="トークン保存 (SQL)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-002" target="C-010">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-010" value="Enqueue" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-004" target="C-012">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-011" value="Dequeue" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-003" target="C-012">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-012" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-003" target="C-021">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-013" value="Push (配信)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;dashed=1;strokeColor=#43A047;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#558B2F;" edge="1" parent="1" source="C-021" target="C-101">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="L-014" value="SMTP" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="C-003" target="C-022">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Client Layer -->
+        <mxCell id="C-100" value="Web (SPA) (C-100)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#FFF3E0;strokeColor=#FB8C00;" vertex="1" parent="1">
+          <mxGeometry x="150" y="80" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-101" value="モバイルアプリ (C-101)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#FFF3E0;strokeColor=#FB8C00;" vertex="1" parent="1">
+          <mxGeometry x="370" y="80" width="170" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- App Layer -->
+        <mxCell id="C-001" value="バックエンドAPI (C-001)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1">
+          <mxGeometry x="100" y="220" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-002" value="認証サービス (C-002)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1">
+          <mxGeometry x="320" y="220" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-003" value="通知Worker (C-003)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1">
+          <mxGeometry x="530" y="220" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-004" value="スケジューラ (C-004)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1">
+          <mxGeometry x="700" y="220" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Data Layer -->
+        <mxCell id="C-010" value="RDB / PostgreSQL (C-010)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1">
+          <mxGeometry x="100" y="470" width="170" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-011" value="Cache / Redis (C-011)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1">
+          <mxGeometry x="320" y="470" width="160" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-012" value="Queue / SQS (C-012)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1">
+          <mxGeometry x="530" y="470" width="150" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-013" value="Storage / S3 (C-013)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1">
+          <mxGeometry x="700" y="470" width="130" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- External Layer -->
+        <mxCell id="C-020" value="Google OAuth (C-020)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1">
+          <mxGeometry x="940" y="220" width="180" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-021" value="APNs / FCM (C-021)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1">
+          <mxGeometry x="940" y="345" width="180" height="50" as="geometry" />
+        </mxCell>
+        <mxCell id="C-022" value="SMTP / メール (C-022)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;align=center;verticalAlign=middle;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1">
+          <mxGeometry x="940" y="470" width="180" height="50" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="LG-title" value="凡例" style="text;html=1;align=left;verticalAlign=middle;fontSize=11;fontStyle=1;fontColor=#1A2538;" vertex="1" parent="1">
+          <mxGeometry x="70" y="640" width="60" height="20" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-1" value="Client層" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFF3E0;strokeColor=#FB8C00;" vertex="1" parent="1">
+          <mxGeometry x="70" y="664" width="120" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-2" value="App層" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1">
+          <mxGeometry x="200" y="664" width="120" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-3" value="Data層" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1">
+          <mxGeometry x="330" y="664" width="120" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-4" value="External" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1">
+          <mxGeometry x="460" y="664" width="120" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-5" value="境界 (Cloud/External)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;dashed=1;fillColor=#F5F5F5;strokeColor=#9E9E9E;" vertex="1" parent="1">
+          <mxGeometry x="590" y="664" width="150" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="LG-6" value="‑ ‑ ‑ 配信 (External→Client / 破線)" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;dashed=1;fillColor=#FFFFFF;strokeColor=#43A047;fontColor=#558B2F;" vertex="1" parent="1">
+          <mxGeometry x="750" y="664" width="230" height="28" as="geometry" />
+        </mxCell>
+
+        <!-- Notes -->
+        <mxCell id="NOTE" value="&lt;b&gt;Scope（対象）&lt;/b&gt;：認証・タスク管理API・通知の主要コンポーネントと外部連携（全体俯瞰 / L1）&#10;&lt;b&gt;対象外&lt;/b&gt;：サブネット/冗長構成/デプロイ単位（L3で別途）、課金・分析基盤&#10;&lt;b&gt;入力ソース&lt;/b&gt;：ヒアリングメモ（サンプル想定）　／　&lt;b&gt;Assumptions&lt;/b&gt;：クラウドはAWS、Pushは APNs/FCM、認証は Google OAuth2.0&#10;&lt;b&gt;因果ルール&lt;/b&gt;：External への矢印は App層からのみ（Data層→External 禁止）。Push は Worker→FCM/APNs=実線、FCM/APNs→Client=破線。&#10;v1.0（初版）" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#444444;spacingLeft=8;spacingTop=6;strokeColor=#D0D0D0;fillColor=#FAFAFA;" vertex="1" parent="1">
+          <mxGeometry x="70" y="702" width="1080" height="100" as="geometry" />
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

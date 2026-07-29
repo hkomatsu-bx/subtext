@@ -1,0 +1,44 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="task-transition-v1" name="画面遷移（主要画面）">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="640" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="タスク管理アプリ — 画面遷移図（主要画面 / L1）" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#1A2538;" vertex="1" parent="1">
+          <mxGeometry x="250" y="16" width="600" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="TR-001" value="起動" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="START" target="SC-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-002" value="ログイン成功" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-001" target="SC-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-003" value="タスク選択" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-002" target="SC-003"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-004" value="新規作成" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-002" target="SC-004"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-005" value="編集" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-003" target="SC-004"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-006" value="設定を開く" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-002" target="SC-005"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-007" value="ログアウト" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="SC-002" target="END"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-008" value="保存／戻る" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#E53935;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#C62828;" edge="1" parent="1" source="SC-004" target="SC-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-009" value="戻る" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#E53935;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#C62828;" edge="1" parent="1" source="SC-003" target="SC-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="TR-010" value="戻る" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#E53935;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#C62828;" edge="1" parent="1" source="SC-005" target="SC-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- States/Screens -->
+        <mxCell id="START" value="" style="ellipse;html=1;fillColor=#37474F;strokeColor=#37474F;" vertex="1" parent="1"><mxGeometry x="60" y="306" width="28" height="28" as="geometry" /></mxCell>
+        <mxCell id="SC-001" value="ログイン画面&#10;(SC-001)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="140" y="290" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="SC-002" value="ダッシュボード&#10;（タスク一覧）&#10;(SC-002)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=2;fontSize=11;fontStyle=1;fontColor=#0D47A1;fillColor=#BBDEFB;strokeColor=#1565C0;" vertex="1" parent="1"><mxGeometry x="400" y="285" width="170" height="70" as="geometry" /></mxCell>
+        <mxCell id="SC-003" value="タスク詳細&#10;(SC-003)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="680" y="170" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="SC-004" value="タスク作成／編集&#10;(SC-004)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="680" y="290" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="SC-005" value="設定画面&#10;(SC-005)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=11;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="680" y="410" width="160" height="60" as="geometry" /></mxCell>
+        <mxCell id="END" value="" style="ellipse;html=1;fillColor=#FFFFFF;strokeColor=#37474F;strokeWidth=3;" vertex="1" parent="1"><mxGeometry x="960" y="306" width="28" height="28" as="geometry" /></mxCell>
+
+        <!-- Legend -->
+        <mxCell id="LG-1" value="画面／状態" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="60" y="540" width="140" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-2" value="― 遷移（前進）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFFFFF;strokeColor=#757575;" vertex="1" parent="1"><mxGeometry x="210" y="540" width="150" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-3" value="‑ ‑ ‑ 戻り遷移（Back／Cancel）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;dashed=1;fillColor=#FFFFFF;strokeColor=#E53935;fontColor=#C62828;" vertex="1" parent="1"><mxGeometry x="370" y="540" width="230" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-4" value="● 初期状態 ／ ◎ 終了状態" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFFFFF;strokeColor=#37474F;" vertex="1" parent="1"><mxGeometry x="610" y="540" width="200" height="26" as="geometry" /></mxCell>
+
+        <mxCell id="NOTE" value="&lt;b&gt;Scope&lt;/b&gt;：ログイン後の主要画面遷移（L1）　／　&lt;b&gt;対象外&lt;/b&gt;：モーダル・ダイアログ・エラー状態（L3で別途）&#10;&lt;b&gt;入力ソース&lt;/b&gt;：ヒアリングメモ（サンプル想定）　／　&lt;b&gt;ルール&lt;/b&gt;：戻り遷移（Back/Cancel）を必ず記載、初期/終了状態を明示。　v1.0（初版）" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#444444;spacingLeft=8;spacingTop=6;strokeColor=#D0D0D0;fillColor=#FAFAFA;" vertex="1" parent="1"><mxGeometry x="60" y="578" width="930" height="48" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

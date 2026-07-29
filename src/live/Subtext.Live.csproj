@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Subtext.Live</RootNamespace>
+    <AssemblyName>Subtext.Live</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- NFR-SEC-05: dependencies pinned to exact versions（Build & Test 段で解決確認・lock） -->
+    <PackageReference Include="AWSSDK.TranscribeStreaming" Version="4.0.100.3" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.9" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- capture 共有ライブラリのみ参照（Q2=A）。recorder へは依存しない（CLI独立, DG-A） -->
+    <ProjectReference Include="..\capture\Subtext.Capture.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- producer（PumpFramesAsync）の純ロジックを単体テストへ公開する。 -->
+    <InternalsVisibleTo Include="Subtext.Live.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

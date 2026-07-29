@@ -1,0 +1,40 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="task-er-v1" name="ER図（全体）">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1120" pageHeight="700" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="タスク管理アプリ — ER図（全体 / L2）" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#1A2538;" vertex="1" parent="1">
+          <mxGeometry x="260" y="16" width="600" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Relations -->
+        <mxCell id="R-001" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-001" target="E-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-002" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-001" target="E-003"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-003" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-003" target="E-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-004" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-002" target="E-005"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-005" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-004" target="E-005"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-006" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-001" target="E-006"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="R-007" value="1..N" style="edgeStyle=entityRelationEdgeStyle;rounded=0;html=1;strokeColor=#607D8B;strokeWidth=1.5;endArrow=ERmany;startArrow=ERone;fontSize=10;fontColor=#455A64;" edge="1" parent="1" source="E-002" target="E-006"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Entities -->
+        <mxCell id="E-001" value="&lt;b&gt;User (E-001)&lt;/b&gt;&lt;br&gt;&lt;br&gt;🔑 PK id&lt;br&gt;email (UNIQUE)&lt;br&gt;name&lt;br&gt;created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="80" y="110" width="200" height="130" as="geometry" /></mxCell>
+        <mxCell id="E-003" value="&lt;b&gt;Project (E-003)&lt;/b&gt;&lt;br&gt;&lt;br&gt;🔑 PK id&lt;br&gt;🔗 FK owner_id → User&lt;br&gt;name&lt;br&gt;created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="80" y="360" width="200" height="130" as="geometry" /></mxCell>
+        <mxCell id="E-002" value="&lt;b&gt;Task (E-002)&lt;/b&gt;&lt;br&gt;&lt;br&gt;🔑 PK id&lt;br&gt;🔗 FK user_id → User&lt;br&gt;🔗 FK project_id → Project&lt;br&gt;title&lt;br&gt;status&lt;br&gt;due_date&lt;br&gt;created_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="450" y="110" width="220" height="180" as="geometry" /></mxCell>
+        <mxCell id="E-005" value="&lt;b&gt;TaskLabel (E-005)&lt;/b&gt;&lt;br&gt;&lt;i&gt;中間テーブル（N..N解消）&lt;/i&gt;&lt;br&gt;&lt;br&gt;🔗 FK task_id → Task&lt;br&gt;🔗 FK label_id → Label" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#FFF3E0;strokeColor=#FB8C00;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="450" y="380" width="220" height="120" as="geometry" /></mxCell>
+        <mxCell id="E-004" value="&lt;b&gt;Label (E-004)&lt;/b&gt;&lt;br&gt;&lt;br&gt;🔑 PK id&lt;br&gt;name&lt;br&gt;color" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="840" y="390" width="200" height="110" as="geometry" /></mxCell>
+        <mxCell id="E-006" value="&lt;b&gt;Notification (E-006)&lt;/b&gt;&lt;br&gt;&lt;br&gt;🔑 PK id&lt;br&gt;🔗 FK user_id → User&lt;br&gt;🔗 FK task_id → Task&lt;br&gt;type&lt;br&gt;sent_at" style="rounded=0;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=8;spacingTop=6;fontSize=11;fontColor=#333333;fillColor=#E8EAF6;strokeColor=#3949AB;strokeWidth=1.5;" vertex="1" parent="1"><mxGeometry x="840" y="110" width="200" height="150" as="geometry" /></mxCell>
+
+        <!-- Legend -->
+        <mxCell id="LG-1" value="🔑 PK（主キー）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E8EAF6;strokeColor=#3949AB;" vertex="1" parent="1"><mxGeometry x="80" y="560" width="150" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-2" value="🔗 FK（外部キー）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E8EAF6;strokeColor=#3949AB;" vertex="1" parent="1"><mxGeometry x="240" y="560" width="150" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-3" value="中間テーブル（N..N）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFF3E0;strokeColor=#FB8C00;" vertex="1" parent="1"><mxGeometry x="400" y="560" width="170" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-4" value="—|&lt; 1..N（一対多）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFFFFF;strokeColor=#607D8B;fontColor=#455A64;" vertex="1" parent="1"><mxGeometry x="580" y="560" width="160" height="26" as="geometry" /></mxCell>
+
+        <mxCell id="NOTE" value="&lt;b&gt;Scope&lt;/b&gt;：主要エンティティと関係（L2：全属性＋FK）　／　&lt;b&gt;対象外&lt;/b&gt;：インデックス・制約・トリガー（L3で別途）&#10;&lt;b&gt;ルール&lt;/b&gt;：N..N は中間テーブル TaskLabel で解消。名称の揺れは正規化（Users→User）。　&lt;b&gt;入力ソース&lt;/b&gt;：ヒアリングメモ（サンプル想定）　v1.0（初版）" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#444444;spacingLeft=8;spacingTop=6;strokeColor=#D0D0D0;fillColor=#FAFAFA;" vertex="1" parent="1"><mxGeometry x="80" y="598" width="960" height="50" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

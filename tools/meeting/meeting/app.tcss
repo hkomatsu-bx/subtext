@@ -1,0 +1,132 @@
+/* 会議ハーネス TUI の配色（Nocturne トークン）。
+   構造（ID/既存ウィジェット構成）は変えず、色・パイプライン段・ステータスバーのみを追加する。
+   変数名は $mt- を必ず前置する（Textual 組込みテーマの $panel/$accent 等と衝突すると
+   組込み既定CSS側の変数解決まで壊れるため）。 */
+
+$mt-ground:      #12141f;
+$mt-bg:          #161826;
+$mt-panel:       #292b31;
+$mt-edge:        #3f424d;
+$mt-dim:         #595d6c;
+$mt-muted:       #75798c;
+$mt-body:        #cfd3e5;
+$mt-strong:      #f3f5fe;
+$mt-accent:      #9184d9;
+$mt-accent-soft: #b5abfc;
+$mt-accent-line: #5d5294;
+$mt-accent-deep: #2b2741;
+/* Nocturne のランプ外の追加色。録音中であることだけを示す専用色（他の状態やアクセントには使わない）。 */
+$mt-rec: #e0554b;
+
+Screen {
+    layout: vertical;
+    background: $mt-ground;
+    color: $mt-body;
+}
+.spacer { width: 1fr; }
+
+/* ── タイトルバー（ASCIIロゴ） ───────────────────────── */
+#logo {
+    height: 5;
+    padding: 0 1;
+    background: $mt-panel;
+    color: $mt-body;
+}
+
+/* ── ステータスバー（パイプライン段と背景を揃える） ───── */
+#status {
+    height: 1;
+    padding: 0 1;
+    background: $mt-bg;
+    color: $mt-muted;
+}
+/* Static の既定幅は auto ではないため、.spacer 以外は明示的に auto にする
+   （さもないと Horizontal 内で各 Static がコンテナ幅いっぱいを取り合ってしまう）。 */
+#status #status-session { width: auto; color: $mt-body; }
+#status #status-cost { width: auto; margin-right: 2; }
+#status .state { width: auto; color: $mt-accent-soft; }
+#status .state.-recording { color: $mt-rec; text-style: bold; }
+
+/* ── パイプライン（段） ─────────────────────────────── */
+#pipeline {
+    height: 3;
+    padding: 0 1;
+    background: $mt-bg;
+    border-bottom: solid $mt-panel;
+}
+.step {
+    width: 1fr;
+    height: 3;
+    border-bottom: solid $mt-bg;
+}
+.step .step-title { color: $mt-dim; }
+.step .step-meta { color: $mt-edge; }
+.step.-done .step-title { color: $mt-body; }
+.step.-done .step-meta { color: $mt-dim; }
+.step.-active {
+    border-bottom: solid $mt-accent;
+}
+.step.-active .step-title { color: $mt-accent-soft; text-style: bold; }
+.step.-active .step-meta { color: $mt-muted; }
+.step-sep {
+    width: 3;
+    height: 3;
+    content-align: center middle;
+    color: $mt-edge;
+    border-bottom: solid $mt-bg;
+}
+
+/* ── 操作パネル（1行） ───────────────────────────────── */
+#actions { height: auto; padding: 0 1; background: $mt-bg; align-vertical: middle; }
+#actions Input { border: round $mt-edge; background: $mt-panel; color: $mt-body; }
+#actions Input:focus { border: round $mt-accent; background-tint: transparent; }
+#actions Button { border: round $mt-edge; background: transparent; color: $mt-body; }
+#actions Button:hover { background: $mt-panel; border: round $mt-muted; color: $mt-strong; }
+#actions Button:focus { border: round $mt-accent; color: $mt-strong; }
+#record-toggle, #import-vtt, #minutes-bedrock {
+    border: round $mt-accent-line;
+    color: $mt-accent-soft;
+}
+#record-toggle.-recording { border: round $mt-rec; color: $mt-rec; }
+#record-minutes { width: 10; }
+.sep { width: auto; height: 3; color: $mt-edge; content-align: center middle; margin: 0 1; }
+
+/* ── モーダルダイアログの共通ボタン配色（既定の primary/error 塗りは使わない） ─ */
+.dialog-btn-primary { background: transparent; border: round $mt-accent-line; color: $mt-accent-soft; }
+.dialog-btn-primary:hover { background: $mt-accent-deep; border: round $mt-accent; color: $mt-strong; }
+.dialog-btn-cancel { background: transparent; border: round $mt-edge; color: $mt-body; }
+.dialog-btn-cancel:hover { background: $mt-panel; border: round $mt-muted; color: $mt-strong; }
+
+/* ── セッション一覧 ─────────────────────────────────── */
+#table {
+    background: $mt-ground;
+    color: $mt-body;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $mt-ground;
+    scrollbar-color: $mt-edge;
+    scrollbar-color-hover: $mt-muted;
+    scrollbar-color-active: $mt-accent;
+}
+#table > .datatable--header { background: $mt-ground; color: $mt-dim; text-style: none; }
+#table > .datatable--cursor { background: $mt-accent-deep; color: $mt-strong; }
+#table:focus > .datatable--cursor { background: $mt-accent-deep; color: $mt-strong; text-style: bold; }
+#table > .datatable--hover { background: $mt-panel; }
+
+/* ── ログ ───────────────────────────────────────────── */
+#log {
+    height: 1fr;
+    border: round $mt-panel;
+    background: $mt-ground;
+    color: $mt-dim;
+    scrollbar-size-vertical: 1;
+    scrollbar-background: $mt-ground;
+    scrollbar-color: $mt-edge;
+}
+
+/* ── フッター ───────────────────────────────────────── */
+Footer { background: $mt-panel; color: $mt-muted; }
+FooterKey { background: $mt-panel; color: $mt-muted; }
+FooterKey:hover { background: $mt-edge; color: $mt-strong; }
+FooterKey > .footer-key--key { color: $mt-accent-soft; background: $mt-panel; text-style: none; }
+FooterKey > .footer-key--description { color: $mt-muted; }
+FooterKey:hover > .footer-key--key { background: $mt-edge; }

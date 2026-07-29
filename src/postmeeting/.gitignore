@@ -1,0 +1,11 @@
+# 認証情報・設定実体（NFR-SEC-07）。テンプレ .env.example のみコミット。
+.env
+# パイプライン中間/最終成果物（音声由来・PII を含みうる, NFR-SEC-04）。
+out/
+# uv / Python 生成物
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+htmlcov/

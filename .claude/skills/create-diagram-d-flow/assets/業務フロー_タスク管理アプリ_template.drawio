@@ -1,0 +1,65 @@
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="task-flow-oauth-v1" name="業務フロー（OAuthログイン）">
+    <mxGraphModel dx="1200" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1100" pageHeight="980" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="タスク管理アプリ — 業務フロー：Googleアカウントでログイン（L1）" style="text;html=1;align=center;verticalAlign=middle;fontSize=18;fontStyle=1;fontColor=#1A2538;" vertex="1" parent="1">
+          <mxGeometry x="250" y="16" width="600" height="34" as="geometry" />
+        </mxCell>
+
+        <!-- Lanes -->
+        <mxCell id="LANE-U" value="ユーザー" style="swimlane;startSize=30;horizontal=1;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontStyle=1;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="200" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="LANE-F" value="フロントエンド" style="swimlane;startSize=30;horizontal=1;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontStyle=1;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="240" y="70" width="200" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="LANE-B" value="バックエンド" style="swimlane;startSize=30;horizontal=1;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontStyle=1;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="440" y="70" width="200" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="LANE-D" value="DB" style="swimlane;startSize=30;horizontal=1;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontStyle=1;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="640" y="70" width="200" height="780" as="geometry" />
+        </mxCell>
+        <mxCell id="LANE-X" value="外部（Google）" style="swimlane;startSize=30;horizontal=1;html=1;fillColor=#FAFAFA;strokeColor=#BDBDBD;fontStyle=1;fontSize=12;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="840" y="70" width="200" height="780" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="E1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="P-001" target="P-101"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="P-101" target="X-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="X-001" target="X-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E4" value="認可コード" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="X-002" target="X-003"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="X-003" target="P-201"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E6" value="UPSERT" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="P-201" target="D-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="D-001" target="P-202"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;" edge="1" parent="1" source="P-202" target="P-102"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E9" value="ログイン状態" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#757575;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#555555;" edge="1" parent="1" source="P-102" target="P-002"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="E10" value="検証失敗→再試行（戻り）" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#E53935;strokeWidth=1.5;endArrow=block;endFill=1;fontSize=9;fontColor=#C62828;" edge="1" parent="1" source="P-201" target="P-001"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+        <!-- Steps -->
+        <mxCell id="P-001" value="「Googleでログイン」押下&#10;(P-001)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#FFF8E1;strokeColor=#FFB300;" vertex="1" parent="1"><mxGeometry x="60" y="120" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="P-101" value="認可リクエスト送信&#10;(P-101)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="260" y="190" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="X-001" value="Google 同意画面・認可&#10;(X-001)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1"><mxGeometry x="860" y="255" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="X-002" value="認可コード発行&#10;(X-002)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1"><mxGeometry x="860" y="320" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="X-003" value="認可コード→トークン交換&#10;(X-003)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1"><mxGeometry x="460" y="385" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="P-201" value="IDトークン検証&#10;(P-201)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="460" y="450" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="D-001" value="ユーザー／トークン UPSERT&#10;(D-001)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1"><mxGeometry x="660" y="515" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="P-202" value="セッション発行&#10;(P-202)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="460" y="580" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="P-102" value="ログイン状態へ更新&#10;(P-102)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="260" y="645" width="160" height="44" as="geometry" /></mxCell>
+        <mxCell id="P-002" value="ダッシュボード表示&#10;(P-002)" style="rounded=1;arcSize=10;whiteSpace=wrap;html=1;strokeWidth=1.5;fontSize=10;fontColor=#333333;fillColor=#FFF8E1;strokeColor=#FFB300;" vertex="1" parent="1"><mxGeometry x="60" y="710" width="160" height="44" as="geometry" /></mxCell>
+
+        <!-- Legend -->
+        <mxCell id="LG-1" value="業務／ユーザー操作" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#FFF8E1;strokeColor=#FFB300;" vertex="1" parent="1"><mxGeometry x="40" y="880" width="150" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-2" value="アプリ処理" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E3F2FD;strokeColor=#1E88E5;" vertex="1" parent="1"><mxGeometry x="200" y="880" width="130" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-3" value="外部連携" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#E8F5E9;strokeColor=#43A047;" vertex="1" parent="1"><mxGeometry x="340" y="880" width="130" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-4" value="DB操作" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;fillColor=#F3E5F5;strokeColor=#8E24AA;" vertex="1" parent="1"><mxGeometry x="480" y="880" width="130" height="26" as="geometry" /></mxCell>
+        <mxCell id="LG-5" value="‑ ‑ ‑ 戻り（ループ）" style="rounded=0;whiteSpace=wrap;html=1;fontSize=10;dashed=1;fillColor=#FFFFFF;strokeColor=#E53935;fontColor=#C62828;" vertex="1" parent="1"><mxGeometry x="620" y="880" width="160" height="26" as="geometry" /></mxCell>
+
+        <mxCell id="NOTE" value="&lt;b&gt;Scope&lt;/b&gt;：Google OAuth2.0 によるログイン業務フロー（L1）　／　&lt;b&gt;対象外&lt;/b&gt;：メール・パスワードログイン、退会フロー&#10;&lt;b&gt;入力ソース&lt;/b&gt;：ヒアリングメモ（サンプル想定）　／　&lt;b&gt;Assumptions&lt;/b&gt;：IdPはGoogle、セッションはサーバ側Cookie&#10;&lt;b&gt;因果ルール&lt;/b&gt;：フロント→外部(認可)→バック(コード交換/検証)→DB(保存)→フロント(ログイン状態)。DBは操作名で表記（UPSERT）。　v1.0（初版）" style="text;html=1;align=left;verticalAlign=top;whiteSpace=wrap;fontSize=10;fontColor=#444444;spacingLeft=8;spacingTop=6;strokeColor=#D0D0D0;fillColor=#FAFAFA;" vertex="1" parent="1"><mxGeometry x="40" y="916" width="1000" height="56" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

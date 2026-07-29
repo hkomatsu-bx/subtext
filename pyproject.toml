@@ -1,0 +1,78 @@
+# Subtext モノレポの uv workspace ルート。
+#
+# 目的: 別PCでの実行と運用摩擦の低減。従来は Unit B（src/postmeeting）と会議ハーネス
+# （tools/meeting）が各々 .venv を持ち、実行のたびに cd を要した。ここを単一の workspace に
+# 束ねることで、リポジトリルートから cd なしに `uv run meeting` / `uv run subtext-postmeeting`
+# を叩け、別PCでは `uv sync` 1回でセットアップが完了する。
+#
+# 疎結合（FR-16）は不変: workspace 化は「実行環境の共有」であって、ユニット間は引き続き
+# 保存ファイルの受け渡しのみで連携し、共有ライブラリ・共有設定は持たない。
+#
+# infra（AWS CDK, aws-cdk-lib 依存で重い）は運用フローに不要なため member に含めない。
+# デプロイ作業時のみ infra/ 配下で個別に `uv sync` する（従来どおり独立プロジェクト）。
+[project]
+name = "subtext-workspace"
+version = "0.1.0"
+description = "Subtext モノレポ workspace ルート（Unit B + 会議ハーネスを単一 venv で駆動）"
+requires-python = ">=3.13"
+# ルート自体はランタイム依存を持たず、member を束ねるだけ。
+dependencies = [
+    "subtext-postmeeting",
+    "subtext-meeting",
+]
+
+[tool.uv.workspace]
+members = ["src/postmeeting", "tools/meeting"]
+
+[tool.uv.sources]
+# 上記 dependencies を PyPI ではなく workspace member として解決する。
+subtext-postmeeting = { workspace = true }
+subtext-meeting = { workspace = true }
+
+[tool.uv]
+# ルートはインストール対象のパッケージではない（束ねるだけの仮想ルート）。
+package = false
+
+[dependency-groups]
+# 開発依存は各 member と同一バージョンで固定（NFR-SEC-05）。
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "mypy==2.3.0",
+    # ruff は設定（[tool.ruff]）だけがあって未導入だったため、`# noqa: BLE001` 等の抑制が
+    # どこでも検査されていなかった（＝抑制コメントが飾りになっていた）。導入して固定する。
+    "ruff==0.14.5",
+]
+
+# lint 設定（未使用 import・未使用変数・明白なバグ傾向の早期検出）。
+# 日本語コメント/プロンプト文を含むため行長は 120（プロンプト本文を機械的に折り返さない）。
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+# F=pyflakes（未使用 import/変数・未定義）, E/W=pycodestyle, B=bugbear（バグ傾向）。
+select = ["F", "E", "W", "B"]
+
+# 型検査（strict）。ガイド§前提・§14 Item124 に基づき静的解析を機械強制する。
+# 検査対象は実装パッケージ（Unit B core + 会議ハーネス core + vocab / verify ツール）。
+# テストコードは strict の対象外（フィクスチャ等で過剰な strict エラーが出るため）。
+# infra（CDK）はテスト網が無く挙動保存に留めるため対象外。
+[tool.mypy]
+python_version = "3.13"
+strict = true
+files = [
+    "src/postmeeting/subtext_postmeeting",
+    "tools/meeting/meeting",
+    "tools/vocab/manage_vocabulary.py",
+    "tools/verify/analyze_recording.py",
+    "tools/verify/analyze_live_latency.py",
+    "tools/verify/validate_minutes.py",
+]
+
+# 未型付けサードパーティ（boto3/botocore/awscrt）の import を許容する。
+# これらは型スタブを同梱しないため、境界で明示的に扱い内部は strict を保つ。
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*", "awscrt.*"]
+ignore_missing_imports = true
+

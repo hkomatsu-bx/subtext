@@ -1,0 +1,7 @@
+Phrase	SoundsLike	IPA	DisplayAs
+サブテキスト			Subtext
+ベドロック			Bedrock
+ベッドロック			Bedrock
+ビーエックス			BeeX
+イチジー			1G
+ニジー			2G

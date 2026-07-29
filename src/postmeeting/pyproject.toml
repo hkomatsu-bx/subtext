@@ -1,0 +1,41 @@
+[project]
+# Subtext Unit B — 会議後パイプライン（Python）。Unit A 出力(WAV+manifest)を入力に
+# Transcribe バッチ話者分離 → 絶対時刻統合 → Bedrock 議事録生成を行うローカル CLI。
+name = "subtext-postmeeting"
+version = "0.1.0"
+description = "Subtext Unit B: post-meeting transcription/diarization/minutes pipeline (PoC)"
+requires-python = ">=3.13"
+# 依存は完全固定（NFR-SEC-05）。範囲指定せず == でピン留め。公式 PyPI のみ。
+# boto3 1.43 系は Python 3.13/3.14 を正式サポート（要 >=3.10）。実行環境(3.13)に整合。
+# awscrt: botocore の CRT 認証プロバイダ依存（ISS-11）。非搭載だと `aws login` 系の
+# 資格情報を直接解決できず MissingDependencyException で停止するため明示追加。
+dependencies = [
+    "awscrt==0.35.0",
+    "boto3==1.43.45",
+]
+
+[project.scripts]
+# CLI エントリ。`uv run subtext-postmeeting ...` で起動。
+subtext-postmeeting = "subtext_postmeeting.cli:main"
+# mp4→VTT 独立ツール。`uv run subtext-mp4-to-vtt recording.mp4` で起動。
+subtext-mp4-to-vtt = "subtext_postmeeting.mp4_to_vtt:main"
+# ライブ字幕 JSONL→VTT 変換（B1F）。`uv run subtext-live-to-vtt live_captions.jsonl` で起動。
+subtext-live-to-vtt = "subtext_postmeeting.live_to_vtt:main"
+
+[dependency-groups]
+# 開発依存（uv のグループ機能）。テスト実行は Build and Test 段で行う。
+dev = [
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+]
+
+[build-system]
+requires = ["hatchling==1.31.0"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["subtext_postmeeting"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=subtext_postmeeting --cov-report=term-missing"
