@@ -7,4 +7,8 @@ Amazon Bedrock 議事録生成（FR-10/11）を行うローカル CLI パイプ�
 連携契約は WAV と final_transcript.json のみ。Unit A の内部実装には依存しない（BR-IN-05）。
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import version as _version
+
+# バージョンの正本は pyproject.toml（ここに数字を直書きすると必ず食い違う）。
+# TUI がロゴへ出す版も同じ経路（importlib.metadata）で読む。
+__version__ = _version("subtext-postmeeting")

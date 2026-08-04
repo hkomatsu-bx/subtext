@@ -409,8 +409,22 @@ winget install Microsoft.PowerShell    # PowerShell 7（pwsh）
 5.1 では動きません。導入後は <code>pwsh</code> と入力して開くウィンドウを使ってください。</p>
 </blockquote>
 <h3 id="1-2-配布フォルダを置く">1-2. 配布フォルダを置く</h3>
-<p>受け取った一式を、パスに空白や日本語を含まない場所（例：<code>C:\Subtext</code>）へ展開します。
+<p>配布物（<code>subtext-&lt;版&gt;-win-x64.zip</code>）は <strong>GitHub の Releases から取得</strong>します。開発担当からファイル共有で受け取っている場合はそちらでも構いません。</p>
+<p>zip を、パスに空白や日本語を含まない場所（例：<code>C:\Subtext</code>）へ展開します。
 中に <code>Subtext.sln</code> と <code>dist</code> フォルダがあることを確認してください。</p>
+<blockquote>
+<p><strong>ダウンロードしたら SHA256 を照合してください</strong>（Release の説明文に記載があります）。</p>
+<pre><code class="language-powershell">Get-FileHash .\subtext-1.0.0-win-x64.zip -Algorithm SHA256
+</code></pre>
+</blockquote>
+<blockquote>
+<p><strong>「配布フォルダ」は 2 つのものを合わせた一式です。自分で <code>git clone</code> して用意することはできません。</strong></p>
+<ul>
+<li><strong>リポジトリ一式</strong>（<code>Subtext.sln</code> があるツリー全体）。会議ハーネスは <code>Subtext.sln</code> を目印に場所を判断し、<code>tools/meeting/meeting.toml</code> を読むため、一部だけ抜き出したものでは動きません。</li>
+<li><strong><code>dist</code> フォルダ</strong>（<code>dist\recorder</code> / <code>dist\live</code>）。<strong>これはリポジトリに含まれていません</strong>。開発担当がビルド機で <code>scripts/publish.ps1</code> を実行して作り、配布用の zip に同梱したものです。</li>
+</ul>
+<p>つまり <strong>ソースを <code>git clone</code> しただけでは動きません</strong>（<code>dist</code> は意図的に Git の管理対象外です）。必ず <strong>Releases の zip</strong> を使ってください。<code>dist</code> が無い場合は自力でビルドしようとせず、開発担当に配布物を依頼してください（ビルドには <code>.NET SDK</code> が必要になり、「SDK 不要」という前提が崩れます）。</p>
+</blockquote>
 <p><code>dist</code> には録音（<code>dist\recorder</code>）とライブ字幕（<code>dist\live</code>）の実行ファイルが入っています。
 これがあるため、この PC に <code>.NET SDK</code> を入れる必要はありません。</p>
 <blockquote>
@@ -450,6 +464,11 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <td><code>AWS_REGION</code></td>
 <td>既定 <code>ap-northeast-1</code> のままで可</td>
 <td></td>
+</tr>
+<tr>
+<td><code>AWS_PROFILE</code></td>
+<td>使うプロファイルを固定したい時</td>
+<td>プロファイル<strong>名</strong>だけを書く（認証情報ではありません）。空欄なら既定（<code>default</code>）を使います。<strong><code>default</code> と書かないでください</strong>：<code>~/.aws/config</code> に <code>[default]</code> が無い環境では、書いた途端に「プロファイルが見つかりません」で止まります</td>
 </tr>
 <tr>
 <td><code>SLACK_BOT_TOKEN</code></td>
@@ -495,7 +514,10 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <h3 id="2-2-画面の見方">2-2. 画面の見方</h3>
 <ul>
 <li><strong>一覧</strong>：セッション番号、セッション名、今どの段か、録音状態、録音長（<code>self</code> / <code>others</code> の秒数）。取込由来のセッションは録音長が <code>-</code> になります。</li>
-<li><strong>上部の帯</strong>：<code>01 録音</code> → <code>02 取込</code> → <code>03 議事録</code> → <code>04 共有</code> の4段。選択中のセッションが今どこにいるかを示します。</li>
+<li><strong>一覧の先頭の印</strong>：処理中のセッションに付き、<strong>点滅します</strong>（<code>●</code> ↔ <code>○</code>）。<code>●</code>（赤）＝録音中、<code>◐</code>（紫）＝議事録作成中・取込中・Slack 投稿中。赤は録音中だけに使う色です。何をしているかは「段」の列（<code>議事録生成中…</code> など）に出ます。印が付いていない行は何も動いていません。</li>
+<li><strong>上部の帯</strong>：<code>01 録音</code> → <code>02 取込</code> → <code>03 議事録</code> → <code>04 共有</code> の4段。選択中のセッションが今どこにいるかを示します。各段の下には、済んだ段には済んだこと（<code>録音済</code>／<code>文字起こし済</code>／<code>議事録生成済</code>）、今の段には次に必要なこと（<code>話者名の記入待ち</code>／<code>未共有</code> など）が出ます。</li>
+<li><strong>右上の AWS</strong>：<code>AWS &lt;プロファイル&gt;/&lt;リージョン&gt; ✓</code>。起動時に AWS へ疎通確認をして、どの口座に向いているかと認証が有効かを示します。<code>✗</code> が出たら認証切れです（対処はログに出ます。§7）。プロファイルを切り替えて起動したいときは <code>uv run meeting tui --profile &lt;名前&gt;</code>。</li>
+<li><strong>実行中のボタン</strong>：処理中はキャプションが変わります（「録音開始」→「停止」、「議事録作成」→「議事録作成中」、「取込 VTT/mp4」→「取込中」）。押せなくなるわけではなく、実行中に押すとログに理由が出ます。</li>
 <li><strong>右上のコスト</strong>：<code>今月 $x.xx / $y.yy</code>（今月の累計と月次上限）。</li>
 <li><strong>ログ</strong>：実行中の見積・進捗・エラーがここに出ます。<code>Ctrl+L</code> で一覧を隠してログを広げられます。</li>
 </ul>
@@ -529,6 +551,10 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <td>セッション削除</td>
 </tr>
 <tr>
+<td><code>a</code></td>
+<td>AWS 認証の再確認（再ログインした後に押す）</td>
+</tr>
+<tr>
 <td><code>Ctrl+R</code></td>
 <td>一覧の再読込</td>
 </tr>
@@ -550,6 +576,7 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <p>会議が始まる前に、左端の入力欄に<strong>録音する分数</strong>を入れて（既定 180 分）、<code>r</code>（または「録音開始」）を押します。</p>
 <ul>
 <li>出力先：<code>data/recordings/&lt;日時&gt;/</code>（<code>self.wav</code>＝自分, <code>others.wav</code>＝相手, <code>manifest.json</code> など）。</li>
+<li>録音が始まると<strong>一覧に新しいセッションが現れ、選択もそこへ移ります</strong>（先頭に <code>●</code>）。停止したあと <code>m</code> を押せば、そのまま今録った会議の議事録になります。選択を動かした場合は、議事録を作る前に対象の行を選び直してください。</li>
 <li>録音には <code>dist\recorder</code> の実行ファイルを使います。押しても録音が始まらない場合は §7 を見てください。</li>
 <li>会議が終わったら、もう一度 <code>r</code>（「停止」）を押します。指定した分数に達すると自動でも止まります。</li>
 <li><strong>画面を閉じると、録音中なら自動で安全停止</strong>してから閉じます（消し忘れ防止）。15 秒待って止まらない場合は強制終了するため、<code>manifest.json</code> が不完全になることがあります。通常は <code>r</code> で止めてから終了してください。</li>
@@ -820,6 +847,10 @@ uv run meeting cost --month 2026-07
 <td>普通のターミナルで実行していますか？ Claude Code セッション内からは録音できません。</td>
 </tr>
 <tr>
+<td>ログに「録音 exe を解決できませんでした（<code>dist/recorder</code> も <code>src/recorder/bin</code> も見つかりません）」</td>
+<td>配布フォルダに <code>dist</code> が入っていません。<code>dist</code> はリポジトリに含まれないため、<code>git clone</code> では付いてきません（§1-2）。この PC でビルドしようとせず、開発担当に配布物を依頼してください。</td>
+</tr>
+<tr>
 <td>画面を再起動したら取込セッションの議事録が作れない</td>
 <td>取り込んだファイルの場所は保存されません。「取込」から同じファイル（mp4 は変換済みの <code>.vtt</code>）を指定し直してください（§2-4）。</td>
 </tr>
@@ -828,8 +859,20 @@ uv run meeting cost --month 2026-07
 <td><code>ffmpeg -version</code> が通るか確認（<a href="#1-5経路-c-を使う時のみffmpeg-を入れる">1-5</a>）。音声トラックの無い mp4 でも起きます。課金前に止めているので余分な請求はありません。</td>
 </tr>
 <tr>
+<td>右上の AWS 表示が <code>✗ 認証切れ</code></td>
+<td>AWS へ再ログイン（<code>aws sso login</code> など、担当者から案内された手順）してから <code>a</code> を押して再確認してください。<code>✗ 権限不足</code> の場合は再ログインでは直りません（IAM ポリシーか Bedrock のモデルアクセスの問題なので担当者へ）。<strong>この表示のままでも録音はできます</strong>（録音は AWS を使いません）。困るのは議事録作成からです。</td>
+</tr>
+<tr>
+<td>右上の AWS 表示が <code>✗ プロファイル不明</code></td>
+<td>指定したプロファイルが <code>~/.aws/config</code> にありません。<code>--profile</code>・環境変数 <code>AWS_PROFILE</code>・<code>.env</code> の <code>AWS_PROFILE</code> の綴りを確認してください（再ログインでは直りません）。</td>
+</tr>
+<tr>
+<td>右上の AWS 表示が <code>✗ 確認失敗</code>／<code>確認中…</code> のまま</td>
+<td>確認そのものができていない状態です（<code>uv</code> が見つからない、ネットワーク不通など）。<code>uv run subtext-postmeeting --check-auth</code> を手で実行するとそのまま原因が出ます。</td>
+</tr>
+<tr>
 <td>文字起こしで AWS エラー</td>
-<td>AWS にログイン済みか、<code>.env</code> の <code>S3_BUCKET</code> が入っているか確認。</td>
+<td>AWS にログイン済みか（右上の AWS 表示が <code>✓</code> か）、<code>.env</code> の <code>S3_BUCKET</code> が入っているか確認。</td>
 </tr>
 <tr>
 <td>要約で失敗（Bedrock）</td>
@@ -874,6 +917,14 @@ uv run meeting minutes            # 議事録生成（Bedrock 要約, 既定）
 uv run meeting minutes --claude   # 議事録生成（Claude 生成。final_transcript.json で停止）
 uv run meeting process            # 話者名を対話で聞いて議事録→Slack まで
 uv run meeting cost               # コスト月次サマリ
+
+# --- AWS の疎通確認（課金なし。画面の右上表示と同じことを手で確かめる）---
+uv run subtext-postmeeting --check-auth
+uv run subtext-postmeeting --check-auth --profile &lt;名前&gt;   # プロファイルを指定して確認
+
+# --- AWS プロファイルを指定して実行（.env の AWS_PROFILE より優先）---
+uv run meeting tui --profile &lt;名前&gt;
+uv run meeting minutes --profile &lt;名前&gt;
 
 # --- Slack 投稿（生成済み議事録を投稿。プレビュー＋y/N 承認）---
 uv run meeting slack --channel C0123456789

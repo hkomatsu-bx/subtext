@@ -3,7 +3,7 @@
 # 駆動するオーケストレータ + コスト台帳。各ユニットは subprocess 経由で呼ぶだけで、
 # ユニット契約(FR-16)には踏み込まない（疎結合を維持）。
 name = "subtext-meeting"
-version = "0.1.0"
+version = "1.0.0"
 description = "Subtext 会議ハーネス: ターミナル起点オーケストレータ + コスト台帳"
 requires-python = ">=3.13"
 # CLI 本体は標準ライブラリのみ（tomllib/subprocess/json/pathlib/argparse）。TUI（meeting tui）

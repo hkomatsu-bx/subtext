@@ -14,6 +14,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from datetime import datetime
 from typing import Callable, Sequence
 
@@ -52,6 +53,9 @@ def main(
         # meeting.toml 不在の FileNotFoundError、必須キー欠落の KeyError、chars_per_token<=0 の
         # ValueError）。外に出していたため生トレースバックが出ていた。
         config = cfg or load_config()
+        # `--profile` は環境変数・.env より優先する（AWS を触るサブコマンドにのみ存在）。
+        if profile := (getattr(args, "profile", None) or "").strip():
+            config = replace(config, aws_profile=profile)
         rc: int = args.handler(config, args, run)
     except (FileNotFoundError, ValueError, KeyError) as exc:
         # 想定内の失敗（ファイル欠落・壊れた manifest/台帳 JSON・必須キー欠落）は
@@ -80,6 +84,19 @@ def _configure_utf8_output() -> None:
             logger.warning("%s を UTF-8 に再設定できませんでした（cp932 のままの可能性）: %s", stream_name, exc)
 
 
+def _add_profile_option(sub_parser: argparse.ArgumentParser) -> None:
+    """AWS を触るサブコマンドに `--profile` を足す。
+
+    付けるのは AWS を呼ぶ経路だけ（`record`／`stop`／`status`／`cost`／`slack` は AWS を
+    使わない）。解決した値は子プロセスへ `AWS_PROFILE` として注入する。
+    """
+    sub_parser.add_argument(
+        "--profile",
+        default=None,
+        help="使う AWS プロファイル（省略時は環境変数 AWS_PROFILE → ルート .env → SDK 既定）",
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="meeting", description="Subtext 会議ハーネス")
     sub = parser.add_subparsers(dest="command")
@@ -98,6 +115,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_stop.set_defaults(handler=_cmd_stop)
 
     p_live = sub.add_parser("live", help="ライブ字幕を開始（確定字幕を JSONL 永続化。別ターミナルで実行）")
+    _add_profile_option(p_live)
     p_live.set_defaults(handler=_cmd_live)
 
     p_minutes = sub.add_parser("minutes", help="議事録パイプラインを見積→実行→台帳記録")
@@ -105,6 +123,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_minutes.add_argument(
         "--claude", action="store_true", help="Bedrock 要約をスキップ（Claude 生成経路。実名 PII を外部送信）"
     )
+    _add_profile_option(p_minutes)
     p_minutes.set_defaults(handler=_cmd_minutes)
 
     p_process = sub.add_parser("process", help="録音済→議事録を対話1コマンドで駆動（後処理ウィザード）")
@@ -113,6 +132,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--claude", action="store_true", help="Bedrock 要約をスキップ（Claude 生成経路。実名 PII を外部送信）"
     )
     p_process.add_argument("--channel", default=None, help="Slack 投稿先チャンネルID（省略時は既定 or 対話入力）")
+    _add_profile_option(p_process)
     p_process.set_defaults(handler=_cmd_process)
 
     p_slack = sub.add_parser(
@@ -131,6 +151,7 @@ def _build_parser() -> argparse.ArgumentParser:
     p_cost.set_defaults(handler=_cmd_cost)
 
     p_tui = sub.add_parser("tui", help="画面操作(TUI)でセッション一覧・停止・議事録・Slack投稿を行う")
+    _add_profile_option(p_tui)
     p_tui.set_defaults(handler=_cmd_tui)
 
     return parser

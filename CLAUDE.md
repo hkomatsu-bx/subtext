@@ -53,6 +53,9 @@ dotnet test tests/Subtext.Recorder.Tests --filter "DisplayName~ReturnsOrder"
 
 # 配布ビルド（Unit A/C を self-contained で publish）
 pwsh -NoProfile -File scripts/publish.ps1
+
+# 配布パッケージ作成（追跡分＋dist を zip・SHA256・Release 説明文の雛形。HEAD の内容が入る）
+pwsh -NoProfile -File scripts/package.ps1
 ```
 
 会議ワークフロー（`meeting tui` / `record` / `minutes` / `slack`、`subtext-postmeeting`、`subtext-mp4-to-vtt`、`subtext-live-to-vtt`）の起動は SKILL.md に従う。
@@ -69,6 +72,16 @@ pwsh -NoProfile -File scripts/publish.ps1
 
 - **バージョンを完全固定する**（NFR-SEC-05）。NuGet 参照は `Version="x.y.z"` 形式で書き、範囲指定しない。公式レジストリのみ使う。
 - Python の依存追加は `uv add`。`pip install` は使わない。
+
+### 製品バージョン
+
+- **リポジトリ全体で 1 つの番号を使う**（現行 1.0.0）。C# と Python で別番号にしない。TUI がロゴへ出す版とその TUI が起動する `recorder.exe` の版が食い違うと、運用担当者から見て「この PC の版」を特定できない。
+- 定義箇所は 5 つだけで、上げるときは**同時に**上げる。
+  - C#: ルートの `Directory.Build.props`（個々の `csproj` に `<Version>` は書かない）
+  - Python: `pyproject.toml`・`src/postmeeting/pyproject.toml`・`tools/meeting/pyproject.toml`・`infra/pyproject.toml`
+- 番号をコードに直書きしない。実行時に必要なら `importlib.metadata.version(...)` で読む（`tui_view.Logo`、`subtext_postmeeting.__version__` がその形）。
+- Python 側を上げたら `uv sync` で `uv.lock` を更新する（lock がメンバーの版を持つため）。
+- リリースは `git tag v<version>` を打つ。タグとコミットは**ユーザーの承認を得てから**作る。
 
 ### トレーサビリティ
 

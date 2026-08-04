@@ -536,3 +536,224 @@ def test_build_ledger_entry_claude_is_pii(cfg: MeetingConfig, repo: Path) -> Non
     )
     assert entry.backend == "claude"
     assert entry.pii_sent is True
+
+
+# --- AWS 資格情報の疎通確認（FR-H2-11） ---------------------------------------
+
+
+@pytest.mark.unit
+def test_build_check_auth_command_uses_unit_b() -> None:
+    # ハーネスは boto3 を持たず Unit B の分類も import できない（FR-16）。確認はプロセス起動で行う。
+    assert runner.build_check_auth_command() == ["uv", "run", "subtext-postmeeting", "--check-auth"]
+
+
+@pytest.mark.unit
+def test_run_check_auth_parses_machine_readable_lines(cfg: MeetingConfig) -> None:
+    calls: list[dict] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append({"cmd": list(cmd), "kwargs": kwargs})
+        return SimpleNamespace(
+            returncode=0,
+            stdout="authProfile=default\nauthRegion=ap-northeast-1\nauthStatus=ok\n",
+            stderr="",
+        )
+
+    status = runner.run_check_auth(cfg, runner=fake_run)
+
+    assert status.ok
+    assert (status.profile, status.region) == ("default", "ap-northeast-1")
+    assert status.message == ""
+    # 応答しない環境で操作を待たせないため待ち上限を付ける。
+    assert calls[0]["kwargs"]["timeout"] == runner.CHECK_AUTH_TIMEOUT_SEC
+    assert calls[0]["kwargs"]["cwd"] == str(cfg.repo_root)
+
+
+@pytest.mark.unit
+def test_run_check_auth_keeps_remediation_message(cfg: MeetingConfig) -> None:
+    def fake_run(cmd, **kwargs):
+        return SimpleNamespace(
+            returncode=1,
+            stdout=(
+                "authProfile=subtext\nauthRegion=ap-northeast-1\nauthStatus=expired\n"
+                "AWS 認証が無効または期限切れです。`! aws login` で再認証してください。\n"
+            ),
+            stderr="",
+        )
+
+    status = runner.run_check_auth(cfg, runner=fake_run)
+
+    assert status.state is runner.AuthState.EXPIRED
+    assert status.label == "認証切れ"
+    assert "aws login" in status.message  # 対処メッセージの正本は Unit B 側
+
+
+@pytest.mark.unit
+def test_run_check_auth_timeout_is_reported_as_check_failure(cfg: MeetingConfig) -> None:
+    import subprocess
+
+    def fake_run(cmd, **kwargs):
+        raise subprocess.TimeoutExpired(cmd, timeout=1)
+
+    status = runner.run_check_auth(cfg, runner=fake_run)
+
+    assert status.state is runner.AuthState.ERROR
+    assert not status.ok
+    assert "応答しませんでした" in status.message
+
+
+@pytest.mark.unit
+def test_run_check_auth_launch_failure_does_not_raise(cfg: MeetingConfig) -> None:
+    # 起動時に必ず走る経路のため、uv 不在でも例外で TUI を落とさない。
+    def fake_run(cmd, **kwargs):
+        raise FileNotFoundError("uv")
+
+    status = runner.run_check_auth(cfg, runner=fake_run)
+
+    assert status.state is runner.AuthState.ERROR
+    assert "起動できませんでした" in status.message
+
+
+@pytest.mark.unit
+def test_parse_auth_output_without_status_is_not_success() -> None:
+    """`authStatus=` が無い出力を成功と読み違えない（Unit B が別の理由で落ちた場合）。"""
+    status = runner.parse_auth_output("", stderr="ERROR: S3_BUCKET が設定されていません。")
+
+    assert status.state is runner.AuthState.ERROR
+    assert "S3_BUCKET" in status.message
+
+
+@pytest.mark.unit
+def test_parse_auth_output_unknown_status_is_not_success() -> None:
+    # Unit B 側に新しい分類が増えても成功扱いにしない。
+    status = runner.parse_auth_output("authStatus=brand_new_kind\n")
+
+    assert status.state is runner.AuthState.UNKNOWN
+
+
+# --- AWS プロファイルの注入（TODO: .env / --profile 指定） ------------------------
+
+
+@pytest.mark.unit
+def test_aws_profile_env_is_empty_when_unspecified(cfg: MeetingConfig) -> None:
+    """未指定なら AWS_PROFILE を渡さない。
+
+    `AWS_PROFILE=default` を入れると、`~/.aws/config` に `[default]` が無い環境
+    （資格情報を環境変数で渡す運用・CI）で botocore が ProfileNotFound を投げる。
+    """
+    assert cfg.aws_profile == ""
+    assert runner.aws_profile_env(cfg) == {}
+
+
+@pytest.mark.unit
+def test_aws_profile_env_passes_resolved_profile(cfg: MeetingConfig) -> None:
+    from dataclasses import replace
+
+    assert runner.aws_profile_env(replace(cfg, aws_profile="subtext-dev")) == {"AWS_PROFILE": "subtext-dev"}
+
+
+@pytest.mark.unit
+def test_pipeline_child_receives_profile(cfg: MeetingConfig) -> None:
+    from dataclasses import replace
+
+    calls: list[dict] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    runner.run_pipeline(replace(cfg, aws_profile="subtext-dev"), "20260625-120156", claude=False, runner=fake_run)
+
+    assert calls[0]["env"]["AWS_PROFILE"] == "subtext-dev"
+
+
+@pytest.mark.unit
+def test_pipeline_child_has_no_profile_when_unspecified(cfg: MeetingConfig, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("AWS_PROFILE", raising=False)
+    calls: list[dict] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    runner.run_pipeline(cfg, "20260625-120156", claude=False, runner=fake_run)
+
+    assert "AWS_PROFILE" not in calls[0]["env"]
+
+
+@pytest.mark.unit
+def test_live_env_carries_profile(cfg: MeetingConfig) -> None:
+    """Unit C は .env を読まないため、注入しないとライブ字幕だけ別プロファイルで動く。"""
+    from dataclasses import replace
+
+    env = runner.build_live_env(replace(cfg, aws_profile="subtext-dev"), "20260625-120156")
+
+    assert env["AWS_PROFILE"] == "subtext-dev"
+    assert "SUBTEXT_Live__CaptionSinkPath" in env  # 既存の注入を壊していない
+
+
+@pytest.mark.unit
+def test_ledger_entry_records_profile(cfg: MeetingConfig, repo: Path) -> None:
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    est = runner.estimate_transcribe(cfg, _SESSION)
+
+    entry = runner.build_ledger_entry(
+        _SESSION,
+        est,
+        unit_price_usd=0.024,
+        cumulative_month_usd=est.usd,
+        units={"minutes": 2.0},
+        ts="2026-08-04T12:00:00+00:00",
+        profile="subtext-dev",
+    )
+
+    assert entry.profile == "subtext-dev"
+    assert entry.to_json_obj()["profile"] == "subtext-dev"
+
+
+@pytest.mark.unit
+def test_parse_auth_output_maps_profile_not_found() -> None:
+    """プロファイル不在は「不明」ではなく専用の表示にする（対処が違うため）。"""
+    status = runner.parse_auth_output(
+        "authProfile=typo\nauthRegion=ap-northeast-1\nauthStatus=profile_not_found\n綴りを確認してください。\n"
+    )
+
+    assert status.state is runner.AuthState.PROFILE_NOT_FOUND
+    assert status.label == "プロファイル不明"
+    assert status.profile == "typo"
+
+
+@pytest.mark.unit
+def test_parse_auth_output_prefers_tail_of_stderr() -> None:
+    """原因は stderr の末尾に出る（`uv run` が解決/インストールの進捗を先に書くため）。"""
+    stderr = (
+        "Resolved 45 packages in 1.2s\n"
+        "Prepared 3 packages in 0.8s\n"
+        "Installed 3 packages in 12ms\n"
+        " + boto3==1.40.0\n"
+        " + botocore==1.43.45\n"
+        "ERROR subtext.postmeeting: パイプライン失敗 S3_BUCKET が設定されていません。\n"
+    )
+
+    status = runner.parse_auth_output("", stderr=stderr)
+
+    assert status.state is runner.AuthState.ERROR
+    assert "S3_BUCKET" in status.message
+    assert "Resolved 45 packages" not in status.message
+
+
+@pytest.mark.unit
+def test_parse_auth_output_keeps_indented_remediation_lines() -> None:
+    """対処メッセージは複数行で来る（折り返さないログでも読めるように字下げごと残す）。"""
+    stdout = (
+        "authProfile=typo\nauthStatus=profile_not_found\n"
+        "指定された AWS プロファイルが見つかりません。\n"
+        "  綴りを確認してください。\n"
+    )
+
+    status = runner.parse_auth_output(stdout)
+
+    assert status.message.splitlines() == [
+        "指定された AWS プロファイルが見つかりません。",
+        "  綴りを確認してください。",
+    ]

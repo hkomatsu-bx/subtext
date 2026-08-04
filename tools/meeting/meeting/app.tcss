@@ -17,6 +17,8 @@ $mt-accent-line: #5d5294;
 $mt-accent-deep: #2b2741;
 /* Nocturne のランプ外の追加色。録音中であることだけを示す専用色（他の状態やアクセントには使わない）。 */
 $mt-rec: #e0554b;
+/* 注意を促す状態（AWS 認証切れなど）。$mt-rec は録音専用のため流用しない。 */
+$mt-warn: #d9a13b;
 
 Screen {
     layout: vertical;
@@ -43,6 +45,8 @@ Screen {
 /* Static の既定幅は auto ではないため、.spacer 以外は明示的に auto にする
    （さもないと Horizontal 内で各 Static がコンテナ幅いっぱいを取り合ってしまう）。 */
 #status #status-session { width: auto; color: $mt-body; }
+#status #status-aws { width: auto; margin-right: 2; }
+#status #status-aws.-warn { color: $mt-warn; text-style: bold; }
 #status #status-cost { width: auto; margin-right: 2; }
 #status .state { width: auto; color: $mt-accent-soft; }
 #status .state.-recording { color: $mt-rec; text-style: bold; }
@@ -88,6 +92,8 @@ Screen {
     color: $mt-accent-soft;
 }
 #record-toggle.-recording { border: round $mt-rec; color: $mt-rec; }
+/* 実行中のボタン（議事録作成中・取込中）。録音専用色は使わない。 */
+#actions Button.-running { border: round $mt-accent; color: $mt-accent-soft; text-style: bold; }
 #record-minutes { width: 10; }
 .sep { width: auto; height: 3; color: $mt-edge; content-align: center middle; margin: 0 1; }
 

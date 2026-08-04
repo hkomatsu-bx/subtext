@@ -84,7 +84,7 @@ S3 の掃除は成功時だけではない。
 
 | 引数 | 用途 |
 |------|------|
-| `--mode {paired,single,vtt}` | 入力モード（必須） |
+| `--mode {paired,single,vtt}` | 入力モード（`--check-auth` 以外では必須） |
 | `--session <dir>` | paired のセッションディレクトリ |
 | `--vtt <file>` | vtt モードの入力ファイル |
 | `--stage {transcribed,merged,named,corrected,summarized}` | 指定段を強制再実行する |
@@ -93,10 +93,61 @@ S3 の掃除は成功時だけではない。
 | `--no-correct` | C2 補正段のみスキップする |
 | `--keep-s3` | 成功後も S3 のオブジェクトを残す |
 | `--env-file <file>` | 読み込む `.env` を指定する |
+| `--profile <name>` | 使う AWS プロファイル（省略時は環境変数 → `.env` → SDK 既定） |
+| `--check-auth` | 資格情報の疎通確認だけを行い、パイプラインを実行しない |
 | `--verbose` | 詳細ログを出す |
 
 矛盾する組み合わせは課金前に拒否する。
 `--no-summarize` と `--stage summarized`、`--no-correct`／`--no-summarize` と `--stage corrected` が対象である。
+
+### AWS プロファイルの選択
+
+どのプロファイルで AWS を呼ぶかは次の順で決める。
+
+```
+--profile  >  環境変数 AWS_PROFILE  >  .env の AWS_PROFILE  >  未設定（SDK 既定＝default プロファイル）
+```
+
+決まった値はエントリポイントで**環境変数 `AWS_PROFILE` へ 1 回書き出す**（`aws.apply_profile`）。
+boto3 クライアント生成は `aws.build_client` と `auth_check` の 2 か所だが、その先の呼び出し元は 4 か所あり、`S3Io`／`TranscribeClient` のコンストラクタ（`region` しか受けていない）まで引数が波及する。
+プロファイル選択はプロセス全体の設定なので、境界で 1 回だけ環境へ渡す方が影響が小さく、後から増えるクライアントも自動的に従う。
+
+**未指定のときは `AWS_PROFILE` を設定しない。**
+`default` を明示的に入れてはならない。
+botocore はプロファイルが明示されていると、`~/.aws/config` に該当セクションが無い場合 `ProfileNotFound` を送出する（未設定なら空の設定を返して許容する）。
+`[default]` を持たない環境（資格情報を環境変数で渡す運用や CI）で、今まで動いていたものが壊れる。
+表示上は `Session().profile_name` が未設定時に `default` を返すため、操作者には `default` と見える。
+
+プロファイル名は資格情報ではなく「どのプロファイルを使うか」の指定であり、`.env` に置いても NFR-SEC-07 に反しない。
+
+### 資格情報の疎通確認（`--check-auth`）
+
+段 0 の認証事前チェックだけを単体で実行する経路である（課金なし）。
+`--mode` を取らず、S3 バケットの必須検証も外す（認証確認に S3 は要らない）。
+
+これは呼び出し側のためにある。
+段 0 は「課金段に入る直前」に走るため、資格情報が切れていることは**議事録生成を押した後**にしか分からない。
+会議ハーネスはこれを起動時に呼び、録音を始める前に失効を知らせる（FR-H2-11）。
+
+結果は機械可読な 1 行として stdout へ出す（Unit A の `sessionId=` と同方針）。
+
+```
+authProfile=default
+authRegion=ap-northeast-1
+authStatus=ok
+```
+
+`authStatus` は `ok` と、`auth_policy` の分類（`expired` / `forbidden` / `profile_not_found` / `transient` / `unknown`）を取る。
+`profile_not_found` は指定プロファイルが `~/.aws/config` に無い場合で、再ログインでは解決しないため期限切れと分けている（`--profile` の綴り違いで起こる）。
+`ok` 以外では終了コードを非ゼロにし、続く行に対処メッセージ（`remediation_message`）を出す。
+
+**アカウント ID・ARN・ユーザー名は出さない**（BR-H2-AUTH-04）。
+`GetCallerIdentity` は呼ぶが、応答からは成否だけを使う。
+呼び出し側がこの出力を画面やログへ流す前提なので、身元情報を載せると BR-ERR-04・NFR-SEC-04 の範囲がそこまで広がる。
+profile 名と region は環境設定であり秘密ではないため、操作者が「どの口座に向いているか」を確かめられるように出す。
+
+分類・リトライ・対処メッセージは段 0 と同じ `auth_policy` を使う（実装も同じ probe を共有する）。
+確認の経路が 2 つに増えても、判定と文言の正本は 1 つに保つ。
 
 ## 話者名ゲート
 

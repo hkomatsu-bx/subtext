@@ -43,6 +43,9 @@ class PipelineConfig:
     bedrock_model_id: str  # 空可。summarize 段で必須チェック（SC-P2 先行検証を妨げない）
     vocabulary_name: str  # 空可（C1・FR-C1-02）。未設定なら Transcribe にカスタム語彙を渡さない
     correction_terms_path: Path  # C2・FR-C2-06。不在/空なら後処理補正は no-op
+    # 使う AWS プロファイル名。空＝未指定（SDK 既定＝default）。既定値を `default` にしては
+    # ならない理由は aws.apply_profile の docstring を参照。
+    aws_profile: str = ""
 
     @staticmethod
     def from_env(env_file: Path | None = None, *, require_s3: bool = True) -> "PipelineConfig":
@@ -85,6 +88,8 @@ class PipelineConfig:
             correction_terms_path=(
                 Path(terms_env) if (terms_env := get("CORRECTION_TERMS_PATH").strip()) else _default_terms_path()
             ),
+            # 環境変数 → .env の順（_load_env の規則）。未設定は空のまま（既定へ倒さない）。
+            aws_profile=get("AWS_PROFILE").strip(),
         )
 
     def require_bedrock_model(self) -> str:

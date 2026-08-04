@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from meeting.config import MeetingConfig, find_repo_root, load_config
+from meeting.config import MeetingConfig, find_repo_root, load_config, read_env_value
 
 _MEETING_TOML = Path(__file__).resolve().parent.parent / "meeting.toml"
 
@@ -67,3 +67,44 @@ def test_load_config_pricing_and_thresholds_loaded(cfg: MeetingConfig) -> None:
     assert cfg.pricing.transcribe_usd_per_minute > 0
     assert cfg.thresholds.per_run_usd > 0
     assert cfg.thresholds.monthly_usd > 0
+
+
+# --- AWS プロファイル（.env / 環境変数） ------------------------------------------
+
+
+@pytest.mark.unit
+def test_aws_profile_read_from_dotenv(repo: Path) -> None:
+    """ルート .env の AWS_PROFILE を読む（Unit C へ注入するためハーネス側でも読む）。"""
+    (repo / ".env").write_text("AWS_REGION=ap-northeast-1\nAWS_PROFILE=from-dotenv\n", encoding="utf-8")
+
+    cfg = load_config(meeting_toml=_MEETING_TOML, start_dir=repo, env={})
+
+    assert cfg.aws_profile == "from-dotenv"
+
+
+@pytest.mark.unit
+def test_aws_profile_environment_wins_over_dotenv(repo: Path) -> None:
+    (repo / ".env").write_text("AWS_PROFILE=from-dotenv\n", encoding="utf-8")
+
+    cfg = load_config(meeting_toml=_MEETING_TOML, start_dir=repo, env={"AWS_PROFILE": "from-env"})
+
+    assert cfg.aws_profile == "from-env"
+
+
+@pytest.mark.unit
+def test_aws_profile_unset_is_empty(repo: Path) -> None:
+    # 未指定は空（既定へ倒さない＝子プロセスへ AWS_PROFILE を渡さない）。
+    cfg = load_config(meeting_toml=_MEETING_TOML, start_dir=repo, env={})
+
+    assert cfg.aws_profile == ""
+
+
+@pytest.mark.unit
+def test_read_env_value_ignores_comments_and_quotes(repo: Path) -> None:
+    (repo / ".env").write_text(
+        '# comment\n\nexport AWS_PROFILE="quoted"  # trailing\nOTHER=x\n', encoding="utf-8"
+    )
+
+    assert read_env_value(repo / ".env", "AWS_PROFILE") == "quoted"
+    assert read_env_value(repo / ".env", "MISSING") is None
+    assert read_env_value(repo / "absent.env", "AWS_PROFILE") is None

@@ -22,6 +22,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
+from meeting.config import read_env_value
+
 # chat.postMessage エンドポイント。
 _SLACK_POST_URL = "https://slack.com/api/chat.postMessage"
 # HTTP タイムアウト（秒）。
@@ -68,7 +70,7 @@ def resolve_slack_token(repo_root: Path, env: Mapping[str, str]) -> str | None:
     token = env.get(_TOKEN_ENV, "").strip()
     if token:
         return token
-    return _read_env_file(repo_root / ".env", _TOKEN_ENV)
+    return read_env_value(repo_root / ".env", _TOKEN_ENV)
 
 
 def has_slack_token(repo_root: Path, env: Mapping[str, str]) -> bool:
@@ -79,54 +81,6 @@ def has_slack_token(repo_root: Path, env: Mapping[str, str]) -> bool:
     事前チェックは真偽値だけを返し、値の解決は実際に投稿する直前まで遅らせる。
     """
     return bool(resolve_slack_token(repo_root, env))
-
-
-def _read_env_file(path: Path, key: str) -> str | None:
-    """ルート .env から 1 キーだけ取り出す最小パーサ（KEY=VALUE のみ・純粋）。
-
-    `#` コメント行・空行・`=` を含まない行は無視する。`export KEY=...` 形式を許容し、
-    値は両端クオート除去とインラインコメント（非クオート値の ` #` 以降）除去を行う。
-    .env の変数展開等は実装しない（YAGNI）。読取失敗（OSError）は None を返す。
-    """
-    if not path.is_file():
-        return None
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        name, _, value = stripped.partition("=")
-        name = name.strip()
-        if name.startswith("export "):
-            name = name[len("export ") :].strip()
-        if name == key:
-            return _parse_env_value(value)
-    return None
-
-
-def _parse_env_value(raw: str) -> str | None:
-    """.env の値部分を解釈する（両端クオート除去・インラインコメント除去・純粋）。
-
-    クオート囲みなら閉じクオートまでを値とし以降（コメント含む）を無視する。非クオートなら
-    ` #` 以降をインラインコメントとして落とす（`xoxb-...` 等トークンに空白/`#` は含まれない前提）。
-    """
-    value = raw.strip()
-    if not value:
-        return None
-    if value[0] in ('"', "'"):
-        quote = value[0]
-        end = value.find(quote, 1)
-        if end != -1:
-            return value[1:end] or None
-        value = value[1:]  # 閉じクオート無し: 開きだけ外して継続
-    else:
-        comment = value.find(" #")
-        if comment != -1:
-            value = value[:comment]
-    return value.strip() or None
 
 
 # GFM→mrkdwn 変換用パターン（行頭見出し・太字・チェックボックス・箇条書き・水平線）。

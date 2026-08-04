@@ -23,7 +23,7 @@ import tempfile
 from pathlib import Path
 from typing import Callable
 
-from . import parser, vtt_writer
+from . import aws, parser, vtt_writer
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import StreamRole
@@ -200,6 +200,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="出力 VTT が既にあっても上書きする（既存 VTT を失い Transcribe を再課金する点に注意）",
     )
     parser_.add_argument("--env-file", type=Path, help=".env のパス（既定: カレントの .env）")
+    parser_.add_argument(
+        "--profile",
+        default=None,
+        help="使う AWS プロファイル（省略時は環境変数 AWS_PROFILE → .env → SDK 既定）",
+    )
     parser_.add_argument("--verbose", action="store_true", help="詳細ログを出力する")
     return parser_
 
@@ -213,6 +218,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         config = PipelineConfig.from_env(args.env_file)  # S3/Transcribe 必須＝require_s3=True
+        aws.apply_profile(aws.resolve_profile(args.profile, config.aws_profile))  # Transcribe の前に決める
         out_path = args.out if args.out is not None else args.mp4.with_suffix(".vtt")
         result = convert(
             args.mp4, out_path, config, keep_s3=args.keep_s3 or config.keep_s3, force=args.force

@@ -189,7 +189,12 @@ def _append_pending_costs(cfg: MeetingConfig, session: str, month: str, pending:
             current = ledger.load(cfg.ledger_path)
             cum = ledger.cumulative_after(current, month, pc.estimate.usd)
             entry = runner.build_ledger_entry(
-                session, pc.estimate, unit_price_usd=pc.unit_price_usd, cumulative_month_usd=cum, units=pc.units
+                session,
+                pc.estimate,
+                unit_price_usd=pc.unit_price_usd,
+                cumulative_month_usd=cum,
+                units=pc.units,
+                profile=cfg.aws_profile,  # どの口座に出た支出かを残す
             )
             ledger.append(cfg.ledger_path, entry)
             per_run += pc.estimate.usd

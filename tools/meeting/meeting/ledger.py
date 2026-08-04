@@ -49,6 +49,9 @@ class LedgerEntry:
     pii_sent: bool = False
     units: Mapping[str, float] = field(default_factory=dict)
     note: str = _DEFAULT_NOTE
+    # 実行時に使った AWS プロファイル名（空＝未指定＝SDK 既定）。プロファイルの切替は課金先
+    # アカウントが変わる操作のため、どの口座に出た支出かを後から辿れるように残す。秘密ではない。
+    profile: str = ""
 
     def to_json_obj(self) -> dict[str, Any]:
         """JSONL の1行に書き出す camelCase dict へ変換。"""
@@ -62,6 +65,7 @@ class LedgerEntry:
             "estUsd": self.est_usd,
             "cumulativeMonthUsd": self.cumulative_month_usd,
             "piiSent": self.pii_sent,
+            "profile": self.profile,
             "note": self.note,
         }
 
@@ -78,6 +82,8 @@ class LedgerEntry:
             pii_sent=bool(obj.get("piiSent", False)),
             units={k: float(v) for k, v in dict(obj.get("units", {})).items()},
             note=str(obj.get("note", _DEFAULT_NOTE)),
+            # 追記のみの台帳なので、キーを追加する前の行にはこの項目が無い（欠落は正常）。
+            profile=str(obj.get("profile", "")),
         )
 
 

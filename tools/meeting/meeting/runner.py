@@ -374,15 +374,28 @@ def needs_live_build(cfg: MeetingConfig) -> bool:
 
 
 def build_live_env(cfg: MeetingConfig, session: str) -> dict[str, str]:
-    """Unit C へ注入する環境変数（字幕 JSONL 出力先・停止ファイル）。
+    """Unit C へ注入する環境変数（字幕 JSONL 出力先・停止ファイル・AWS プロファイル）。
 
     Unit C は CLI 引数でなく `SUBTEXT_Live__*` の設定上書きで受け取る（LiveSttConfig）。
     値のみでパス直書きはしない（[paths] 由来。BR-SEC-01: 秘密は含まない）。
+
+    AWS プロファイルは Unit C が `.env` を読まないため、ここで渡さないとライブ字幕だけ
+    別のプロファイル（SDK 既定）で動く。.NET SDK も `AWS_PROFILE` を見る。
     """
     return {
         "SUBTEXT_Live__CaptionSinkPath": str(cfg.live_captions_path(session)),
         "SUBTEXT_Live__StopFilePath": str(cfg.live_stop_file(session)),
+        **aws_profile_env(cfg),
     }
+
+
+def aws_profile_env(cfg: MeetingConfig) -> dict[str, str]:
+    """子プロセスへ渡す AWS プロファイル指定（未指定なら空 dict）。
+
+    未指定のときに `AWS_PROFILE=default` を入れてはならない（`~/.aws/config` に `[default]` が
+    無い環境で `ProfileNotFound` になる）。詳細は Unit B の `aws.apply_profile` を参照。
+    """
+    return {"AWS_PROFILE": cfg.aws_profile} if cfg.aws_profile else {}
 
 
 def run_live(
@@ -549,18 +562,146 @@ def _run_postmeeting(
     cmd: list[str],
     *,
     runner: Runner,
+    timeout_sec: float | None = None,
 ) -> "subprocess.CompletedProcess[str]":
-    """subtext-postmeeting 共通の起動処理（cwd・OUTPUT_DIR 注入・出力キャプチャ）。"""
+    """subtext-postmeeting 共通の起動処理（cwd・OUTPUT_DIR 注入・出力キャプチャ）。
+
+    `timeout_sec` を渡すと待ち上限を付ける（認証確認のような「返らなくても諦めたい」経路用。
+    パイプライン本体は Transcribe のポーリングで長時間かかるため既定は無制限）。
+    """
     import os
 
-    env = {**os.environ, "OUTPUT_DIR": str(cfg.out_dir)}
+    env = {**os.environ, "OUTPUT_DIR": str(cfg.out_dir), **aws_profile_env(cfg)}
     return runner(
         cmd,
         cwd=str(cfg.repo_root),
         capture_output=True,
         text=True,
         env=env,
+        timeout=timeout_sec,
     )
+
+
+# --- AWS 資格情報の疎通確認（FR-H2-11・BR-H2-AUTH-04） ---------------------------
+
+# 確認の待ち上限（秒）。ネットワークが黒穴だと boto3 の既定リトライで分単位まで伸びるため、
+# 表示のための確認が操作を待たせないようハーネス側で先に打ち切る。`uv run` のプロセス起動と
+# boto3 の import ぶんの余裕を含める（打ち切っても `a` で再確認できる）。
+CHECK_AUTH_TIMEOUT_SEC = 30.0
+# Unit B が出す機械可読行のキー（`04-unit-b-会議後パイプライン.md` の契約）。
+_AUTH_KEYS = ("authProfile", "authRegion", "authStatus")
+# 対処メッセージとして拾う行数の上限（想定外の長い出力をログへ流し込まない）。
+_AUTH_MESSAGE_MAX_LINES = 5
+
+
+class AuthState(str, Enum):
+    """資格情報の確認結果。`ok` 以外は AWS を使う段へ進めない状態を表す。"""
+
+    OK = "ok"
+    EXPIRED = "expired"  # 期限切れ・未設定 → 再ログインで解決する
+    FORBIDDEN = "forbidden"  # 権限不足 → 再ログインでは解決しない
+    PROFILE_NOT_FOUND = "profile_not_found"  # 指定プロファイルが無い → 綴り/設定の問題
+    TRANSIENT = "transient"  # 一過性障害（リトライ後もなお失敗）
+    UNKNOWN = "unknown"  # Unit B が分類できなかった
+    ERROR = "error"  # 起動失敗・タイムアウト・出力が読めない（確認自体ができていない）
+
+
+# 画面・ログ向けの短いラベル。
+AUTH_STATE_LABELS: dict[AuthState, str] = {
+    AuthState.OK: "OK",
+    AuthState.EXPIRED: "認証切れ",
+    AuthState.FORBIDDEN: "権限不足",
+    AuthState.PROFILE_NOT_FOUND: "プロファイル不明",
+    AuthState.TRANSIENT: "一時障害",
+    AuthState.UNKNOWN: "不明",
+    AuthState.ERROR: "確認失敗",
+}
+
+
+@dataclass(frozen=True)
+class AuthStatus:
+    """`--check-auth` の結果。profile / region は表示用（秘密ではない・BR-H2-AUTH-04）。"""
+
+    state: AuthState
+    profile: str = ""
+    region: str = ""
+    message: str = ""  # 対処メッセージ（OK なら空）
+
+    @property
+    def ok(self) -> bool:
+        return self.state is AuthState.OK
+
+    @property
+    def label(self) -> str:
+        return AUTH_STATE_LABELS[self.state]
+
+
+def build_check_auth_command() -> list[str]:
+    """Unit B の資格情報確認（課金なし）の起動コマンド。"""
+    return [*resolve_postmeeting_cmd(), "--check-auth"]
+
+
+def parse_auth_output(stdout: str, *, stderr: str = "") -> AuthStatus:
+    """`--check-auth` の stdout を AuthStatus へ畳む（純粋）。
+
+    `authStatus=` が無い出力は「確認できなかった」として ERROR に倒す（成功と区別する）。
+    その場合の原因は Unit B の出力にしか無いため、先頭数行を対処メッセージとして拾う。
+    """
+    values: dict[str, str] = {}
+    rest: list[str] = []
+    for raw in stdout.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        key, sep, value = line.partition("=")
+        if sep and key in _AUTH_KEYS:
+            values[key] = value.strip()
+        else:
+            rest.append(raw.rstrip())  # 対処メッセージは字下げごと残す（読みやすさのため）
+
+    message = "\n".join(rest[:_AUTH_MESSAGE_MAX_LINES])
+    raw_state = values.get("authStatus", "")
+    if not raw_state:
+        # stderr は**末尾**を採る。`uv run` は解決/インストールの進捗を stderr へ先に書くため、
+        # 先頭から採ると原因（最後に出る Unit B のエラー行）が落ちて進捗表示だけが残る。
+        detail = message or "\n".join(stderr.strip().splitlines()[-_AUTH_MESSAGE_MAX_LINES:])
+        return AuthStatus(
+            AuthState.ERROR,
+            message=detail or "AWS 認証の確認結果を読み取れませんでした（uv run subtext-postmeeting --check-auth）。",
+        )
+    try:
+        state = AuthState(raw_state)
+    except ValueError:
+        # Unit B 側に新しい分類が増えた場合。成功と誤認しないよう UNKNOWN 扱いにする。
+        state = AuthState.UNKNOWN
+    return AuthStatus(
+        state,
+        profile=values.get("authProfile", ""),
+        region=values.get("authRegion", ""),
+        message="" if state is AuthState.OK else message,
+    )
+
+
+def run_check_auth(cfg: MeetingConfig, *, runner: Runner = subprocess.run) -> AuthStatus:
+    """Unit B に資格情報を確認させる（課金なし・FR-H2-11）。
+
+    ハーネスは boto3 を持たず、Unit B の `auth_policy` も import できない（FR-16）。
+    そのためプロセス起動と stdout の契約だけで結果を受け取る。確認できなかったこと自体も
+    状態として返し、例外で呼び出し側を落とさない（起動時に必ず走る経路のため）。
+    """
+    try:
+        proc = _run_postmeeting(
+            cfg, build_check_auth_command(), runner=runner, timeout_sec=CHECK_AUTH_TIMEOUT_SEC
+        )
+    except subprocess.TimeoutExpired:
+        return AuthStatus(
+            AuthState.ERROR,
+            message=f"AWS 認証の確認が {CHECK_AUTH_TIMEOUT_SEC:.0f} 秒で応答しませんでした（ネットワークを確認してください）。",
+        )
+    except OSError as exc:
+        # uv が PATH に無い等。ここで落とすと TUI が起動できなくなる。
+        return AuthStatus(AuthState.ERROR, message=f"AWS 認証の確認を起動できませんでした: {exc}")
+    return parse_auth_output(proc.stdout or "", stderr=proc.stderr or "")
 
 
 def build_ledger_entry(
@@ -571,8 +712,12 @@ def build_ledger_entry(
     cumulative_month_usd: float,
     units: dict[str, float],
     ts: str | None = None,
+    profile: str = "",
 ) -> LedgerEntry:
-    """概算結果を台帳1行に変換する。backend は段から導出（claude のみ piiSent）。"""
+    """概算結果を台帳1行に変換する。backend は段から導出（claude のみ piiSent）。
+
+    `profile` は実行時の AWS プロファイル（空＝未指定）。どの口座に出た支出かを残す。
+    """
     backend = "claude" if estimate.stage == "claude" else "aws"
     return LedgerEntry(
         ts=ts or now_iso(),
@@ -584,4 +729,5 @@ def build_ledger_entry(
         cumulative_month_usd=cumulative_month_usd,
         pii_sent=estimate.pii_sent,
         units=units,
+        profile=profile,
     )

@@ -12,7 +12,7 @@
 # デプロイ作業時のみ infra/ 配下で個別に `uv sync` する（従来どおり独立プロジェクト）。
 [project]
 name = "subtext-workspace"
-version = "0.1.0"
+version = "1.0.0"
 description = "Subtext モノレポ workspace ルート（Unit B + 会議ハーネスを単一 venv で駆動）"
 requires-python = ">=3.13"
 # ルート自体はランタイム依存を持たず、member を束ねるだけ。

@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING
 from meeting import naming, pipeline, runner
 from meeting.runner import SessionSummary, Stage
 from meeting.tui_modals import SpeakerNamesModal
+from meeting.tui_view import Activity
 
 if TYPE_CHECKING:  # 実行時 import は循環参照になるため型検査時のみ。
     from meeting.tui import MeetingApp
@@ -138,12 +139,13 @@ class MinutesFlow:
                     app.cfg, vtt_path, claude=claude, run=app.subprocess_runner, emit=app.log_from_thread
                 )
 
-        app.run_worker(
+        app.start_session_worker(
             work,
-            thread=True,
             group=route.worker_group,
+            session_id=session_id,
+            # 経路（paired / vtt）に関わらず「議事録生成」として扱う（取込と混同させない）。
+            activity=Activity.MINUTES,
             name=worker_name(claude),
-            exit_on_error=False,
         )
 
     # --- 話者名ゲート（BR-NAME-01/02・FR-H2-03） --------------------------------
@@ -216,16 +218,17 @@ class MinutesFlow:
             self._app.log_line("取込を実行中です。完了までお待ちください。")
             return
         # 命名ゲートからの再開に元の VTT パスが要るため記憶する（セッションID＝ファイル名 stem）。
-        self._vtt_sources[runner.vtt_session_id(path)] = path
+        session_id = runner.vtt_session_id(path)
+        self._vtt_sources[session_id] = path
         app = self._app
-        app.run_worker(
+        app.start_session_worker(
             lambda: pipeline.run_vtt_pipeline(
                 app.cfg, path, claude=claude, run=app.subprocess_runner, emit=app.log_from_thread
             ),
-            thread=True,
             group=VTT_WORKER_GROUP,
+            session_id=session_id,
+            activity=Activity.IMPORT,
             name=worker_name(claude),
-            exit_on_error=False,
         )
 
     def _import_mp4(self, mp4_path: Path, *, claude: bool) -> None:
@@ -237,14 +240,15 @@ class MinutesFlow:
         if self._app.worker_active(MP4_WORKER_GROUP):
             self._app.log_line("mp4 取込を実行中です。完了までお待ちください。")
             return
-        self._vtt_sources[runner.vtt_session_id(mp4_path)] = runner.mp4_vtt_output_path(mp4_path)
+        session_id = runner.vtt_session_id(mp4_path)
+        self._vtt_sources[session_id] = runner.mp4_vtt_output_path(mp4_path)
         app = self._app
-        app.run_worker(
+        app.start_session_worker(
             lambda: pipeline.run_mp4_pipeline(
                 app.cfg, mp4_path, claude=claude, run=app.subprocess_runner, emit=app.log_from_thread
             ),
-            thread=True,
             group=MP4_WORKER_GROUP,
+            session_id=session_id,
+            activity=Activity.IMPORT,
             name=worker_name(claude),
-            exit_on_error=False,
         )

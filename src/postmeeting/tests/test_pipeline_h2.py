@@ -150,7 +150,10 @@ class TestPreflight:
         with pytest.raises(PipelineError) as exc:
             checker()
         assert exc.value.failed_stage == "auth"
-        assert "aws login" in str(exc.value)  # 再認証の actionable 指示を含む
+        # プロファイル不在は再ログインでは直らないため、綴りの確認を促す文言になる
+        # （`--profile` 追加でプロファイル名の打ち間違いが起こり得るようになったため分けた）。
+        assert "AWS_PROFILE" in str(exc.value)
+        assert "aws login" not in str(exc.value)
 
     def test_preflight_skipped_on_full_reuse(self, tmp_path: Path, single_wav: Path) -> None:
         calls = {"n": 0}

@@ -12,6 +12,7 @@ Textual に依存しないため、Pilot を起動せずに単体テストでき
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -25,11 +26,22 @@ PopenFactory = Callable[..., "subprocess.Popen[str]"]
 # ユーザー向け出力の seam（TUI はログウィジェットへの書込に差し替える）。
 Emit = Callable[[str], None]
 
+# recorder が起動直後に出す機械可読行（`sessionId=yyyyMMdd-HHmmss`）。オーケストレータが
+# セッションを把握するための Unit A 側の契約（03-unit-a-録音.md / Q6=A・BR-IO-01）。
+# 書式まで照合するのは、ID をそのまま一覧の行・選択対象として扱うため（他の行を巻き込まない）。
+_SESSION_ID_LINE = re.compile(r"^sessionId=(\d{8}-\d{6})$")
+
 # 録音の graceful 停止（stop-file 検知→WAV 確定）を待つ上限秒。
 # recorder は stop-file を 250ms 間隔でポーリングし、ローカル完結のため確定は速い。
 STOP_TIMEOUT_SEC = 15.0
 # 無応答で kill したあとプロセスを回収するまでの上限秒。
 _KILL_WAIT_SEC = 5.0
+
+
+def parse_session_id(line: str) -> str | None:
+    """recorder の stdout 1 行からセッション ID を取り出す（純粋。該当しなければ None）。"""
+    match = _SESSION_ID_LINE.match(line.strip())
+    return match.group(1) if match else None
 
 
 class RecordingController:
@@ -40,10 +52,19 @@ class RecordingController:
         self._run = run
         self._popen = popen
         self._process: "subprocess.Popen[str] | None" = None
+        self._session_id: str | None = None
 
     def is_recording(self) -> bool:
         """録音プロセスが生きているか。"""
         return self._process is not None and self._process.poll() is None
+
+    @property
+    def session_id(self) -> str | None:
+        """録音中セッションの ID（stdout の `sessionId=` 由来。録音していなければ None）。
+
+        プロセスの終了とともに捨てる。残すと、録音が終わった後も一覧が「録音中」を出し続ける。
+        """
+        return self._session_id if self.is_recording() else None
 
     def request_stop(self) -> Path:
         """停止シグナル（stop-file）を作り、そのパスを返す（recorder がポーリングして止まる）。"""
@@ -51,12 +72,23 @@ class RecordingController:
         self._cfg.stop_file.touch()
         return self._cfg.stop_file
 
-    def run_until_exit(self, minutes: int, *, emit: Emit, on_started: Callable[[], None]) -> int | None:
+    def run_until_exit(
+        self,
+        minutes: int,
+        *,
+        emit: Emit,
+        on_started: Callable[[], None],
+        on_session_id: Callable[[str], None] = lambda _session_id: None,
+    ) -> int | None:
         """（ワーカースレッドで実行）必要ならビルド → Popen → 標準出力を 1 行ずつ emit へ流す。
 
         プロセス終了までブロックするが、ワーカースレッド内なので UI はフリーズしない。
         戻り値は recorder の終了コード（0=正常, 1=録音中の致命的異常/部分保存, 2=起動時異常）。
         起動できなかった場合（ビルド失敗・exe 未解決。理由は emit 済み）は None を返す。
+
+        `on_session_id` は `sessionId=` 行を読んだ時点で 1 回だけ呼ぶ。Popen 直後（`on_started`）
+        では ID がまだ決まっていないため、一覧の更新と選択の移動はこちらを起点にする。
+        emit と同じくワーカースレッドから呼ばれる（メインスレッドへの受け渡しは呼び出し側の責務）。
         """
         if runner.needs_recorder_build(self._cfg):
             emit("録音 exe が未ビルド/古いためビルドします（dotnet build）...")
@@ -80,13 +112,22 @@ class RecordingController:
             text=True,
             bufsize=1,
         )
+        # 順序が重要: 先に前回の ID を捨てる。逆順だと「新しいプロセスは生きている・ID は前回のもの」
+        # という一瞬が生まれ、`session_id` が別セッションを録音中として返す。
+        self._session_id = None
         self._process = process
         on_started()
         assert process.stdout is not None
         for line in process.stdout:
-            emit(line.rstrip("\n"))
+            text = line.rstrip("\n")
+            emit(text)
+            session_id = parse_session_id(text)
+            if session_id is not None and self._session_id is None:
+                self._session_id = session_id
+                on_session_id(session_id)
         rc = process.wait()
         self._process = None
+        self._session_id = None
         return rc
 
     def stop_and_wait(self, timeout_sec: float = STOP_TIMEOUT_SEC) -> None:

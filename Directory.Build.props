@@ -1,0 +1,19 @@
+<Project>
+
+  <!--
+    C# プロジェクト共通のバージョン。MSBuild がリポジトリルートの本ファイルを自動で取り込むため、
+    src/* と tests/* の全 csproj に効く（個々の csproj に <Version> は書かない＝定義は 1 か所）。
+
+    Python 側（ルート・src/postmeeting・tools/meeting・infra の pyproject.toml）と**同じ番号に揃える**。
+    揃えない場合、TUI のロゴが出す版（subtext-meeting の版）と、その TUI が起動する recorder.exe の
+    版が食い違い、運用担当者から見て「この PC の版」を特定できなくなる。
+
+    Version から AssemblyVersion / FileVersion / InformationalVersion が導出される。
+    InformationalVersion には SourceLink がコミット SHA を付けるため（`1.0.0+<sha>`）、
+    配布した exe がどのコミットのビルドかはファイルのプロパティ→詳細で特定できる。
+  -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+  </PropertyGroup>
+
+</Project>

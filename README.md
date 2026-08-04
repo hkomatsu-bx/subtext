@@ -128,6 +128,27 @@ uv run meeting tui
 > Unit B（議事録）は `dist/` に含みません。`uv sync` で `.venv` に入るものを
 > `uv run subtext-postmeeting` で起動します。
 
+### 配布物を GitHub Release へ出す
+
+上の手順 1〜4 を運用担当者に手作業させないため、「リポジトリ追跡分 ＋ `dist/`」を 1 つの zip にまとめて Release へ添付します（約 100MB）。
+
+```powershell
+pwsh -NoProfile -File scripts/publish.ps1     # dist/ を作る
+pwsh -NoProfile -File scripts/package.ps1     # build/subtext-<版>-win-x64.zip と SHA256・説明文の雛形
+
+gh release create v1.0.0 build/subtext-1.0.0-win-x64.zip `
+  --title "Subtext 1.0.0" --notes-file build/release-notes-1.0.0.md
+```
+
+`package.ps1` は次の 2 点を機械的に守ります。
+
+- **バージョンの一致確認**：C# 1 か所＋Python 4 か所が同じ番号でなければ止まる
+- **秘密と PII の非同梱**：`git archive`（追跡ファイルのみ）で作るため、追跡外の `.env` と `data/` は構造上入らない
+
+パッケージされるのは **HEAD の内容**です。リリースしたい変更は先にコミットしてください。`dist/` の実行ファイルには publish 時のコミット SHA が焼き込まれるため（`製品バージョン` 欄）、コミット後に `publish.ps1` から流し直すと Release と中身の対応が取れます。
+
+> **Release は公開されます**（このリポジトリは public）。添付する zip に秘密は含みませんが、公開して差し支えない内容かは毎回確認してください。
+
 ---
 
 ## リポジトリ構成

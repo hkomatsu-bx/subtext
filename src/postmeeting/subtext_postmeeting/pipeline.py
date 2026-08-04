@@ -11,15 +11,14 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any, Callable
 
 from . import (
+    auth_check,
     auth_policy,
-    aws,
     correction as correction_mod,
     merger,
     parser,
@@ -496,29 +495,16 @@ def make_credential_checker(region: str) -> Callable[[], None]:
     SDK 既定のクレデンシャルプロバイダチェーンに委譲し、独自に資格情報を保存しない
     （NFR-SEC-07）。一過性障害は有限回リトライ、恒久障害（期限切れ/権限不足/不明）は
     actionable な PipelineError を送出して課金段の前に停止する（BR-H2-AUTH-02/03）。
+
+    確認そのものは `auth_check.probe_credentials` に委ねる（CLI の `--check-auth` と実装を
+    共有し、判定と文言の正本を 1 つに保つため）。ここは「恒久障害なら課金前に止める」という
+    段 0 の方針だけを持つ。
     """
 
     def _check() -> None:
-        boto3 = aws.import_boto3("auth")  # 未導入は actionable な PipelineError（checker 注入で回避）
-        try:
-            # client 生成時にも資格情報解決エラー（ProfileNotFound / NoCredentialsError 等）が
-            # 出るため、ここも捕捉して生トレースバックでなく actionable 停止へ倒す（BR-H2-AUTH-02）。
-            client = boto3.client("sts", region_name=region)
-        except Exception as exc:  # noqa: BLE001 分類して actionable に再送出（握り潰さない）
-            kind = auth_policy.classify_exception(exc)
-            raise PipelineError(auth_policy.remediation_message(kind), failed_stage="auth") from exc
-        attempt = 0
-        while True:
-            try:
-                client.get_caller_identity()
-                return
-            except Exception as exc:  # noqa: BLE001 分類して再送出/リトライ（握り潰さない）
-                kind = auth_policy.classify_exception(exc)
-                if auth_policy.should_retry(kind, attempt, auth_policy.DEFAULT_MAX_RETRIES):
-                    time.sleep(auth_policy.next_backoff(attempt))
-                    attempt += 1
-                    continue
-                raise PipelineError(auth_policy.remediation_message(kind), failed_stage="auth") from exc
+        probe = auth_check.probe_credentials(region)  # boto3 未導入は PipelineError のまま抜ける
+        if probe.kind is not None:
+            raise PipelineError(auth_policy.remediation_message(probe.kind), failed_stage=auth_check.STAGE)
 
     return _check
 

@@ -12,6 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
+from . import auth_check, auth_policy, aws
 from .config import PipelineConfig
 from .errors import PipelineError
 from .input_resolver import resolve_paired, resolve_single
@@ -45,8 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--mode",
         choices=["paired", "single", "vtt"],
-        required=True,
-        help="paired=Unit A の sessionDir / single=単一WAV検証 / vtt=WebVTT（Teams 等）入力",
+        help="paired=Unit A の sessionDir / single=単一WAV検証 / vtt=WebVTT（Teams 等）入力（--check-auth 以外では必須）",
     )
     parser.add_argument("--session", type=Path, help="paired: 録音セッションディレクトリ（manifest.json を含む）")
     parser.add_argument("--wav", type=Path, help="single: 検証対象 WAV ファイル")
@@ -76,6 +76,16 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--keep-s3", action="store_true", help="成功後も S3 オブジェクトを保持する")
     parser.add_argument("--env-file", type=Path, help=".env のパス（既定: カレントの .env）")
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="使う AWS プロファイル（省略時は環境変数 AWS_PROFILE → .env → SDK 既定）",
+    )
+    parser.add_argument(
+        "--check-auth",
+        action="store_true",
+        help="AWS 資格情報の疎通確認だけを行う（課金なし・パイプラインは実行しない）",
+    )
     parser.add_argument("--verbose", action="store_true", help="詳細ログを出力する")
     return parser
 
@@ -104,10 +114,18 @@ def main(argv: list[str] | None = None) -> int:
     logger = logging.getLogger("subtext.postmeeting")
 
     try:
+        # 矛盾する組み合わせは、認証確認だけの実行でも先に弾く（`--check-auth` を付けたときだけ
+        # 通ってしまうと、次の課金実行で初めて気づくことになる）。
         target_stage = _STAGE_CHOICES[args.stage] if args.stage else None
         _reject_conflicting_flags(args, target_stage)
+        if args.check_auth:
+            return _run_check_auth(args)
+        if args.mode is None:
+            # --check-auth 以外では必須。argparse の required=True を外したため自前で弾く。
+            raise PipelineError("--mode は必須です（paired / single / vtt）。", failed_stage="input")
         # VTT 経路は Transcribe/S3 を使わないため S3_BUCKET 必須化を外す。
         config = PipelineConfig.from_env(args.env_file, require_s3=(args.mode != "vtt"))
+        aws.apply_profile(aws.resolve_profile(args.profile, config.aws_profile))
         if args.mode == "vtt":
             result = _run_vtt(args, config, target_stage)
         else:
@@ -138,6 +156,32 @@ def main(argv: list[str] | None = None) -> int:
     print(f"完了: {result.minutes_path}")
     print(f"最終トランスクリプト: {result.final_transcript_path}")
     return 0
+
+
+def _run_check_auth(args: argparse.Namespace) -> int:
+    """資格情報の疎通確認だけを行う（課金なし。FR-H2-07 / FR-H2-11・BR-H2-AUTH-02）。
+
+    段 0 の事前チェックは「課金段の直前」に走るため、失効は議事録生成を始めてから分かる。
+    会議ハーネスは録音前にこれを叩いて操作者へ知らせるので、単体で呼べる経路を用意する。
+
+    結果は機械可読な 1 行として stdout へ出す（Unit A の `sessionId=` と同方針）。
+    出すのは成否・profile・region に限り、アカウント ID・ARN は出さない（BR-H2-AUTH-04・
+    NFR-SEC-04）。呼び出し側がこの出力を画面とログへ流すためである。
+
+    S3 バケットの必須検証は外す（認証確認に S3 は要らない）。
+    """
+    config = PipelineConfig.from_env(args.env_file, require_s3=False)
+    profile = aws.resolve_profile(args.profile, config.aws_profile)
+    aws.apply_profile(profile)
+    # 解決済みの名前を渡す（存在しないプロファイル名でも「default で失敗」と報告しないため）。
+    probe = auth_check.probe_credentials(config.aws_region, profile=profile)
+    print(f"authProfile={probe.profile}")
+    print(f"authRegion={config.aws_region}")
+    print(f"authStatus={probe.status}")
+    if probe.kind is None:  # ok（`probe.ok` と同義。型を絞るためこちらで書く）
+        return 0
+    print(auth_policy.remediation_message(probe.kind))
+    return 1
 
 
 def _run_vtt(args: argparse.Namespace, config: PipelineConfig, target_stage: Stage | None) -> PipelineResult:

@@ -11,7 +11,9 @@ import asyncio
 import json
 import re
 import subprocess
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +21,7 @@ from types import SimpleNamespace
 import pytest
 
 from textual.content import Content
+from textual.pilot import Pilot
 from textual.widgets import Button, DataTable, Input, Log, Static
 
 from meeting import ledger
@@ -32,8 +35,25 @@ from conftest import write_manifest, write_out_file, write_pipeline_outputs
 _SESSION = "20260625-120156"
 
 
+# 起動時の AWS 疎通確認（TUI が on_mount で必ず投げる）への定型応答。実 AWS へは出ない。
+_AUTH_OK_STDOUT = "authProfile=default\nauthRegion=ap-northeast-1\nauthStatus=ok\n"
+
+
+def _auth_response(cmd):
+    """`--check-auth` の呼び出しなら成功応答を返す（それ以外は None）。
+
+    各フェイク runner はこれを**最初に**返す。そうしないと起動時チェックが、各テストが数えている
+    呼び出し回数・引数・副作用（`side_effect`）に混ざる。
+    """
+    if "--check-auth" in cmd:
+        return SimpleNamespace(returncode=0, stdout=_AUTH_OK_STDOUT, stderr="")
+    return None
+
+
 def _ok_runner(side_effect=None):
     def _run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         if side_effect is not None:
             side_effect(cmd, kwargs)
         return SimpleNamespace(returncode=0, stdout="ok", stderr="")
@@ -797,6 +817,8 @@ def test_quit_refused_while_billed_worker_runs(cfg: MeetingConfig, repo: Path) -
     release = asyncio.Event()
 
     def blocking_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         # ワーカーを実行中のまま保持する（Slack/議事録の長時間処理を模す）。
         while not release.is_set():
             time.sleep(0.01)
@@ -951,7 +973,10 @@ def test_pipeline_step_reflects_naming_required_stage(cfg: MeetingConfig, repo: 
 
 @pytest.mark.integration
 def test_session_numbers_are_sequential_in_ascending_order(cfg: MeetingConfig, repo: Path) -> None:
-    """セッション一覧はセッションID昇順。先頭列の通し番号はその順で1から振られる。"""
+    """セッション一覧はセッションID昇順。先頭列の通し番号はその順で1から振られる。
+
+    先頭列は処理中マーカー（`●`／`◐`）を兼ねるため、待機中の行はマーカー幅の空白が前置される。
+    """
     write_manifest(repo, "20260601-000000", self_sec=1, others_sec=1)
     write_manifest(repo, "20260615-000000", self_sec=1, others_sec=1)
     write_manifest(repo, "20260701-000000", self_sec=1, others_sec=1)
@@ -968,10 +993,11 @@ def test_session_numbers_are_sequential_in_ascending_order(cfg: MeetingConfig, r
 
     rows = _run_async(scenario())
     assert rows == [
-        ("1", "20260601-000000"),
-        ("2", "20260615-000000"),
-        ("3", "20260701-000000"),
+        ("  1", "20260601-000000"),
+        ("  2", "20260615-000000"),
+        ("  3", "20260701-000000"),
     ]
+    assert all("●" not in number and "◐" not in number for number, _ in rows), "待機中はマーカーを出さない"
 
 
 @pytest.mark.integration
@@ -1145,6 +1171,8 @@ def _staged_runner(steps, *, rcs=None):
     calls: list[list[str]] = []
 
     def _run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         index = len(calls)
         calls.append(list(cmd))
         steps[min(index, len(steps) - 1)](cmd, kwargs)
@@ -1349,6 +1377,8 @@ def test_import_mp4_runs_mp4_pipeline_and_records_both_stages(cfg: MeetingConfig
     mp4.write_bytes(b"\x00")
 
     def _run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         if cmd[0] == "ffprobe":
             return SimpleNamespace(returncode=0, stdout="600.0", stderr="")
         if any("mp4-to-vtt" in part for part in cmd):
@@ -1384,6 +1414,8 @@ def test_import_mp4_registers_generated_vtt_for_resume(cfg: MeetingConfig, repo:
     mp4.write_bytes(b"\x00")
 
     def _run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         if cmd[0] == "ffprobe":
             return SimpleNamespace(returncode=0, stdout="60.0", stderr="")
         if any("mp4-to-vtt" in part for part in cmd):
@@ -1416,6 +1448,8 @@ def test_import_mp4_aborts_when_ffprobe_missing(cfg: MeetingConfig, repo: Path) 
     calls: list[list[str]] = []
 
     def _run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
         calls.append(list(cmd))
         if cmd[0] == "ffprobe":
             raise FileNotFoundError("ffprobe")
@@ -1658,3 +1692,586 @@ def test_logo_keeps_bracketed_repo_path(cfg: MeetingConfig) -> None:
     assert "AAA-[draft]-BBB" in plain  # 置換値が再パースされていないこと。
     assert "▟█▙" in plain  # マイク部分のマークアップは従来どおり効いている（タグは消えている）。
     assert MIC_RED not in plain
+
+
+# --- 処理状態の可視化（一覧のマーカー / 録音開始時の選択移動） -------------------
+
+_REC_SESSION = "20260804-170215"
+
+
+class _HoldingProcess:
+    """`sessionId=` を出した後、release されるまで stdout を閉じないフェイク Popen。
+
+    録音中の状態を観測するために使う（`_FakeProcess` は行を出し切ると即終了扱いになる）。
+    """
+
+    def __init__(self, session_id: str, release: threading.Event) -> None:
+        self._release = release
+        self._returncode: int | None = None
+        self.stdout = self._lines(session_id)
+
+    def _lines(self, session_id: str):
+        yield f"sessionId={session_id}"
+        self._release.wait(5)  # テストがハングしないよう上限を置く
+
+    def poll(self) -> int | None:
+        return self._returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        self._returncode = 0
+        return 0
+
+    def kill(self) -> None:
+        self._returncode = -9
+
+
+def _cell(app: MeetingApp, session_id: str, column: str) -> str:
+    """列キーでセルを読む（列の並び順に依存しない）。"""
+    return str(app.query_one("#table", DataTable).get_cell(session_id, column))
+
+
+def _freeze_blink(app: MeetingApp) -> None:
+    """点滅の自動位相送りを止める（記号を決め打ちで検証するテスト用）。
+
+    止めないと 0.6 秒周期のタイマーが `pilot.pause()` 中に割り込み、`●` を期待した箇所で
+    `○` を観測する（負荷次第で落ちる不安定なテストになる）。
+    """
+    assert app._blink_timer is not None
+    app._blink_timer.pause()
+
+
+async def _wait_until(pilot: Pilot[None], predicate: Callable[[], bool], *, timeout: float = 5.0) -> None:
+    """条件が満たされるまでメッセージポンプを回す（満たされないまま timeout なら AssertionError）。
+
+    録音の `sessionId=` はワーカースレッドが読んでから `call_from_thread` で渡るため、
+    `pilot.pause()` 1 回では間に合わないことがある（負荷が高いと落ちる不安定なテストになる）。
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return
+        await pilot.pause(0.05)
+    raise AssertionError("条件が満たされないままタイムアウトしました。")
+
+
+@pytest.mark.integration
+def test_recording_start_lists_new_session_and_selects_it(cfg: MeetingConfig, repo: Path) -> None:
+    """録音を始めたら一覧に新セッションが現れ、選択がそこへ移ること。
+
+    移らないと前セッションが選ばれたまま残り、停止直後に議事録生成を押すと別の録音へ課金する。
+    録音中セッションは manifest 未生成のため `runner.list_sessions` には出ない（表示側で合成する）。
+    """
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)  # 先に別セッションが選ばれている状態
+    _make_dist_exe(cfg)
+    release = threading.Event()
+
+    async def scenario() -> tuple[str | None, list[str], int, str, str | None]:
+        app = MeetingApp(cfg, run=_ok_runner(), popen=lambda *a, **k: _HoldingProcess(_REC_SESSION, release))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            _freeze_blink(app)  # ● を決め打ちで見るため位相を固定する
+            before = app._selected  # 前提: 既存セッションが既定選択
+            await pilot.click("#record-toggle")
+            await _wait_until(pilot, lambda: app._recorder.session_id == _REC_SESSION)
+            table = app.query_one("#table", DataTable)
+            ids = [str(table.get_cell_at((row, 1))) for row in range(table.row_count)]
+            result = (
+                app._selected,
+                ids,
+                table.cursor_row,
+                _cell(app, _REC_SESSION, "number"),
+                before,
+            )
+            release.set()
+            await app.workers.wait_for_complete()
+            return result
+
+    selected, ids, cursor_row, number_text, before = _run_async(scenario())
+
+    assert before == _SESSION
+    assert selected == _REC_SESSION
+    assert _REC_SESSION in ids
+    assert cursor_row == ids.index(_REC_SESSION), "表のカーソルも新セッションに合っていること"
+    assert "●" in number_text
+
+
+@pytest.mark.integration
+def test_recording_session_row_shows_recording_stage(cfg: MeetingConfig) -> None:
+    """録音中の行は段の列に「録音中」を出す（manifest 未生成の「未録音」ではない）。"""
+    _make_dist_exe(cfg)
+    release = threading.Event()
+
+    async def scenario() -> tuple[str, str]:
+        app = MeetingApp(cfg, run=_ok_runner(), popen=lambda *a, **k: _HoldingProcess(_REC_SESSION, release))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#record-toggle")
+            await _wait_until(pilot, lambda: app._recorder.session_id == _REC_SESSION)
+            result = (_cell(app, _REC_SESSION, "stage"), _cell(app, _REC_SESSION, "status"))
+            release.set()
+            await app.workers.wait_for_complete()
+            return result
+
+    stage_text, status_text = _run_async(scenario())
+
+    assert stage_text == "録音中（進行中）"
+    assert status_text == "録音中"
+
+
+@pytest.mark.integration
+def test_recording_marker_blinks(cfg: MeetingConfig) -> None:
+    """録音中マーカーが点滅すること（タイマーでセルを差し替える）。
+
+    ANSI の blink 属性は端末側の設定で無視されるため、点滅は自前のタイマーで作る。
+    ここでは位相の進み方（点灯 → 消灯 → 点灯）を決定的に確かめる。
+
+    実タイマーは止めてから手で位相を進める。止めないと `pilot.pause()` の最中に 0.6 秒周期の
+    タイマーが割り込んで位相が余分に反転し、観測結果が負荷次第で変わる（不安定なテストになる）。
+    """
+    _make_dist_exe(cfg)
+    release = threading.Event()
+
+    async def scenario() -> list[str]:
+        app = MeetingApp(cfg, run=_ok_runner(), popen=lambda *a, **k: _HoldingProcess(_REC_SESSION, release))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            _freeze_blink(app)  # 自動の位相送りを止める（下で手動に切り替える）
+            await pilot.click("#record-toggle")
+            await _wait_until(pilot, lambda: app._recorder.session_id == _REC_SESSION)
+            phases = [_cell(app, _REC_SESSION, "number")]
+            for _ in range(2):
+                app._toggle_blink()
+                await pilot.pause()
+                phases.append(_cell(app, _REC_SESSION, "number"))
+            release.set()
+            await app.workers.wait_for_complete()
+            return phases
+
+    phases = _run_async(scenario())
+
+    assert phases == ["● 1", "○ 1", "● 1"]
+
+
+def _marker_colours(app: MeetingApp) -> list[str | None]:
+    """画面に描かれたマーカー（●/◐/○）の色を拾う。
+
+    セルの値ではなく**描画結果**を見る。DataTable は既定（`cursor_foreground_priority="css"`）だと
+    `.datatable--cursor` の color でセルの色を上書きするため、値としては色を持っていても
+    選択行では画面に出ない。
+    """
+    colours: list[str | None] = []
+    for strip in app.screen._compositor.render_strips():
+        for segment in strip:
+            if segment.text in ("●", "◐", "○"):
+                style = segment.style
+                colours.append(style.color.name if style is not None and style.color is not None else None)
+    return colours
+
+
+@pytest.mark.integration
+def test_recording_marker_keeps_record_colour_on_selected_row(cfg: MeetingConfig) -> None:
+    """選択行でもマーカーが録音色で描かれること。
+
+    録音開始時は当の録音セッションを選択状態にするため、カーソル行で色が消えると
+    「赤い印で録音中が分かる」という狙いがいちばん効くべき行で効かなくなる。
+    """
+    _make_dist_exe(cfg)
+    release = threading.Event()
+
+    async def scenario() -> tuple[list[str | None], int]:
+        app = MeetingApp(cfg, run=_ok_runner(), popen=lambda *a, **k: _HoldingProcess(_REC_SESSION, release))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#record-toggle")
+            await _wait_until(pilot, lambda: app._recorder.session_id == _REC_SESSION)
+            table = app.query_one("#table", DataTable)
+            result = (_marker_colours(app), table.cursor_row)
+            release.set()
+            await app.workers.wait_for_complete()
+            return result
+
+    colours, cursor_row = _run_async(scenario())
+
+    assert cursor_row == 0, "録音セッションが選択（カーソル）行であること"
+    assert MIC_RED in colours
+
+
+@pytest.mark.integration
+def test_blink_timer_is_registered_and_idle_list_does_not_blink(cfg: MeetingConfig, repo: Path) -> None:
+    """点滅タイマーは常設だが、動いているセッションが無い間は再描画しないこと。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+
+    async def scenario() -> tuple[bool, str, bool]:
+        app = MeetingApp(cfg, run=_ok_runner())
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            has_timer = app._blink_timer is not None
+            before = _cell(app, _SESSION, "number")
+            app._toggle_blink()
+            await pilot.pause()
+            return has_timer, before, app._blink_lit
+
+    has_timer, before, still_lit = _run_async(scenario())
+
+    assert has_timer, "点滅タイマーが張られていること"
+    assert before == "  1"
+    assert still_lit, "処理中が無いときは位相を進めない（無用な再描画を避ける）"
+
+
+@pytest.mark.integration
+def test_minutes_refused_while_selected_session_is_recording(cfg: MeetingConfig) -> None:
+    """録音中セッションで議事録生成を押しても、取込由来と誤判定した案内を出さないこと。"""
+    _make_dist_exe(cfg)
+    release = threading.Event()
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=_ok_runner(), popen=lambda *a, **k: _HoldingProcess(_REC_SESSION, release))
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#record-toggle")
+            await _wait_until(pilot, lambda: app._recorder.session_id == _REC_SESSION)
+            await pilot.press("m")
+            await pilot.pause()
+            text = "\n".join(app.query_one("#log", Log).lines)
+            release.set()
+            await app.workers.wait_for_complete()
+            return text
+
+    text = _run_async(scenario())
+
+    assert "録音中です。停止してから議事録を作成してください。" in text
+    assert "入力ファイルを保持していません" not in text  # 取込由来と誤判定した案内を出さない
+
+
+@pytest.mark.integration
+def test_running_minutes_marks_row_and_clears_on_completion(cfg: MeetingConfig, repo: Path) -> None:
+    """議事録生成中の行にマーカーと実行中の段を出し、完了したら消すこと。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    release = asyncio.Event()
+
+    def blocking_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
+        while not release.is_set():
+            time.sleep(0.01)
+        _write_transcript_and_minutes(repo)
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    async def scenario() -> tuple[str, str, str]:
+        app = MeetingApp(cfg, run=blocking_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            _freeze_blink(app)  # ◐ を決め打ちで見るため位相を固定する
+            app._selected = _SESSION
+            await pilot.press("m")
+            await pilot.pause()
+            running_number = _cell(app, _SESSION, "number")
+            running_stage = _cell(app, _SESSION, "stage")
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return running_number, running_stage, _cell(app, _SESSION, "number")
+
+    running_number, running_stage, done_number = _run_async(scenario())
+
+    assert "◐" in running_number
+    assert running_stage == "議事録生成中…"
+    assert "◐" not in done_number, "完了後はマーカーを消すこと"
+
+
+@pytest.mark.integration
+def test_minutes_button_shows_running_caption(cfg: MeetingConfig, repo: Path) -> None:
+    """議事録作成中は「議事録作成」ボタンのキャプションを「議事録作成中」にすること。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    release = asyncio.Event()
+
+    def blocking_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
+        while not release.is_set():
+            time.sleep(0.01)
+        _write_transcript_and_minutes(repo)
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    async def scenario() -> tuple[str, bool, str, str]:
+        app = MeetingApp(cfg, run=blocking_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.press("m")
+            await pilot.pause()
+            minutes_button = app.query_one("#minutes-bedrock", Button)
+            running = (str(minutes_button.label), minutes_button.has_class("-running"))
+            # 議事録生成中に取込ボタンまで「取込中」にしない。
+            import_label = str(app.query_one("#import-vtt", Button).label)
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return (*running, import_label, str(minutes_button.label))
+
+    label, marked, import_label, after = _run_async(scenario())
+
+    assert label == "議事録作成中 (m)"
+    assert marked, "実行中を示すクラスを付けること"
+    assert import_label == "取込 VTT/mp4 (i)"
+    assert after == "議事録作成 (m)", "完了後は元のキャプションへ戻すこと"
+
+
+@pytest.mark.integration
+def test_import_button_shows_running_caption(cfg: MeetingConfig, repo: Path) -> None:
+    """取込中は「取込 VTT/mp4」のキャプションを「取込中」にすること。"""
+    vtt = repo / "meeting-2026-08-04.vtt"
+    vtt.write_text("WEBVTT\n", encoding="utf-8")
+    release = asyncio.Event()
+
+    def blocking_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
+        while not release.is_set():
+            time.sleep(0.01)
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    async def scenario() -> tuple[str, str, str]:
+        app = MeetingApp(cfg, run=blocking_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await pilot.click("#import-vtt")
+            await pilot.pause()
+            app.screen.query_one("#path-input", Input).value = str(vtt)
+            await pilot.click("#ok")
+            await pilot.pause()
+            import_button = app.query_one("#import-vtt", Button)
+            running = str(import_button.label)
+            minutes_label = str(app.query_one("#minutes-bedrock", Button).label)
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return running, minutes_label, str(import_button.label)
+
+    running, minutes_label, after = _run_async(scenario())
+
+    assert running == "取込中 (i)"
+    assert minutes_label == "議事録作成 (m)"
+    assert after == "取込 VTT/mp4 (i)"
+
+
+@pytest.mark.integration
+def test_minutes_on_imported_session_does_not_say_importing(cfg: MeetingConfig, repo: Path) -> None:
+    """取込由来セッションの議事録生成を「取込中」と表示しないこと。
+
+    この経路は `--mode vtt`（取込と同じワーカーグループ）で走るため、グループを根拠に
+    表示を決めると議事録生成中に「取込中」と出る。処理の種別で判定する実装の回帰防止。
+    """
+    session = "meeting-2026-08-04"
+    write_out_file(repo, session, "final_transcript.json", json.dumps({"segments": [{"text": "x" * 100}]}))
+    release = asyncio.Event()
+
+    def blocking_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
+        while not release.is_set():
+            time.sleep(0.01)
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    async def scenario() -> tuple[str, str, str]:
+        app = MeetingApp(cfg, run=blocking_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._minutes._vtt_sources[session] = repo / f"{session}.vtt"  # 取込済みの記憶を模す
+            app._selected = session
+            await pilot.press("m")
+            await pilot.pause()
+            result = (
+                str(app.query_one("#minutes-bedrock", Button).label),
+                str(app.query_one("#import-vtt", Button).label),
+                _cell(app, session, "stage"),
+            )
+            release.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return result
+
+    minutes_label, import_label, stage_text = _run_async(scenario())
+
+    assert minutes_label == "議事録作成中 (m)"
+    assert import_label == "取込 VTT/mp4 (i)"
+    assert stage_text == "議事録生成中…"
+
+
+@pytest.mark.integration
+def test_activity_marker_is_cleared_when_worker_raises(cfg: MeetingConfig, repo: Path) -> None:
+    """ワーカーが例外終了してもマーカーを残さないこと。
+
+    処理中を「セッションID → 状態」で持つと、例外時は戻り値 `(session_id, rc)` が無いため
+    解除できず、一覧が処理中を出し続ける。グループ単位で持つ実装の回帰防止。
+    """
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+
+    def exploding_run(cmd, **kwargs):
+        if (auth := _auth_response(cmd)) is not None:
+            return auth
+        raise RuntimeError("subprocess boom")
+
+    async def scenario() -> tuple[str, str, dict[str, str]]:
+        app = MeetingApp(cfg, run=exploding_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.press("m")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return (
+                _cell(app, _SESSION, "number"),
+                "\n".join(app.query_one("#log", Log).lines),
+                dict(app._activities),
+            )
+
+    number_text, log_text, activities = _run_async(scenario())
+
+    assert "◐" not in number_text
+    assert activities == {}
+    assert "例外終了" in log_text
+
+
+@pytest.mark.integration
+def test_completed_steps_keep_their_own_meta(cfg: MeetingConfig, repo: Path) -> None:
+    """段の注記は段ごとに自分の状態を述べること（04 共有に「議事録生成済」を出さない）。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    write_pipeline_outputs(repo, _SESSION)  # minutes.md まで到達＝MINUTES_DONE
+
+    async def scenario() -> list[str]:
+        app = MeetingApp(cfg, run=_ok_runner())
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            return [
+                str(app.query_one(f"#step-{key}").query_one(".step-meta").render())
+                for key in ("record", "import", "minutes", "share")
+            ]
+
+    metas = _run_async(scenario())
+
+    assert metas == ["録音済", "文字起こし済", "議事録生成済", "未共有"]
+
+
+# --- AWS 資格情報の確認（FR-H2-11） ---------------------------------------------
+
+
+def _auth_runner(stdout: str, *, returncode: int = 0):
+    """`--check-auth` に定型応答を返すフェイク runner（呼ばれたコマンドも記録する）。"""
+    calls: list[list[str]] = []
+
+    def _run(cmd, **kwargs):
+        calls.append(list(cmd))
+        if "--check-auth" in cmd:
+            return SimpleNamespace(returncode=returncode, stdout=stdout, stderr="")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    return _run, calls
+
+
+@pytest.mark.integration
+def test_startup_shows_aws_profile_and_region(cfg: MeetingConfig) -> None:
+    """起動時に profile と region をステータスバーへ出す（会議前に向き先を確かめられるように）。"""
+    run, calls = _auth_runner("authProfile=subtext-dev\nauthRegion=ap-northeast-1\nauthStatus=ok\n")
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return str(app.query_one("#status-aws").render())
+
+    text = _run_async(scenario())
+
+    assert text == "AWS subtext-dev/ap-northeast-1 ✓"
+    assert ["uv", "run", "subtext-postmeeting", "--check-auth"] in calls
+
+
+@pytest.mark.integration
+def test_expired_credentials_are_shown_with_remediation(cfg: MeetingConfig) -> None:
+    """失効時は画面に印を出し、Unit B の対処メッセージをログへ流すこと。"""
+    run, _calls = _auth_runner(
+        "authProfile=default\nauthRegion=ap-northeast-1\nauthStatus=expired\n"
+        "AWS 認証が無効または期限切れです。`! aws login`（または `aws sso login`）で再認証してください。\n",
+        returncode=1,
+    )
+
+    async def scenario() -> tuple[str, bool, str]:
+        app = MeetingApp(cfg, run=run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            widget = app.query_one("#status-aws", Static)
+            return str(widget.render()), widget.has_class("-warn"), "\n".join(app.query_one("#log", Log).lines)
+
+    text, warned, log_text = _run_async(scenario())
+
+    assert "✗" in text and "認証切れ" in text
+    assert warned, "注意色（$mt-warn）を当てること"
+    assert "aws login" in log_text
+    assert "⚠ AWS 認証" in log_text
+
+
+@pytest.mark.integration
+def test_auth_check_does_not_block_startup(cfg: MeetingConfig) -> None:
+    """確認が返る前でも画面は操作できる（確認中の表示にとどめる）。"""
+    release = asyncio.Event()
+
+    def slow_run(cmd, **kwargs):
+        if "--check-auth" in cmd:
+            while not release.is_set():
+                time.sleep(0.01)
+            return SimpleNamespace(returncode=0, stdout="authStatus=ok\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    async def scenario() -> tuple[str, bool]:
+        app = MeetingApp(cfg, run=slow_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            checking = str(app.query_one("#status-aws").render())
+            clicked = await pilot.click("#refresh")  # 確認中でも操作できる
+            release.set()
+            await app.workers.wait_for_complete()
+            return checking, clicked
+
+    checking, clicked = _run_async(scenario())
+
+    assert checking == "AWS 確認中…"
+    assert clicked
+
+
+@pytest.mark.integration
+def test_a_key_rechecks_credentials(cfg: MeetingConfig) -> None:
+    """再認証後に `a` で再確認できること（再認証自体はハーネスから起動しない）。"""
+    outputs = [
+        "authProfile=default\nauthRegion=ap-northeast-1\nauthStatus=expired\n",
+        "authProfile=default\nauthRegion=ap-northeast-1\nauthStatus=ok\n",
+    ]
+    calls: list[list[str]] = []
+
+    def _run(cmd, **kwargs):
+        if "--check-auth" not in cmd:
+            return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+        stdout = outputs[min(len(calls), len(outputs) - 1)]
+        calls.append(list(cmd))
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    async def scenario() -> tuple[str, str]:
+        app = MeetingApp(cfg, run=_run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            before = str(app.query_one("#status-aws").render())
+            await pilot.press("a")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return before, str(app.query_one("#status-aws").render())
+
+    before, after = _run_async(scenario())
+
+    assert "✗" in before
+    assert after == "AWS default/ap-northeast-1 ✓"
+    assert len(calls) == 2

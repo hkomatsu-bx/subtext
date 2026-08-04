@@ -490,7 +490,7 @@ wheels = [
 
 [[package]]
 name = "subtext-meeting"
-version = "0.1.0"
+version = "1.0.0"
 source = { editable = "tools/meeting" }
 dependencies = [
     { name = "textual" },
@@ -513,7 +513,7 @@ dev = [
 
 [[package]]
 name = "subtext-postmeeting"
-version = "0.1.0"
+version = "1.0.0"
 source = { editable = "src/postmeeting" }
 dependencies = [
     { name = "awscrt" },
@@ -540,7 +540,7 @@ dev = [
 
 [[package]]
 name = "subtext-workspace"
-version = "0.1.0"
+version = "1.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "subtext-meeting" },

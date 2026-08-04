@@ -178,3 +178,33 @@ def test_minutes_warns_on_threshold(cfg: MeetingConfig, repo: Path, capsys) -> N
     out = capsys.readouterr().out
     assert rc == 0
     assert "コスト警告" in out
+
+
+# --- AWS プロファイル（--profile） ------------------------------------------------
+
+
+@pytest.mark.integration
+def test_minutes_profile_option_reaches_child_and_ledger(cfg: MeetingConfig, repo: Path) -> None:
+    """`--profile` が Unit B の環境へ渡り、台帳にも残ること（どの口座の支出か辿れるように）。"""
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    envs: list[dict] = []
+
+    def _run(cmd, **kwargs):
+        envs.append(kwargs.get("env", {}))
+        write_pipeline_outputs(repo, _SESSION)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    rc = main(["minutes", _SESSION, "--profile", "subtext-dev"], cfg=cfg, run=_run)
+
+    assert rc == 0
+    assert envs and envs[0]["AWS_PROFILE"] == "subtext-dev"
+    entries = ledger.load(cfg.ledger_path)
+    assert entries and {e.profile for e in entries} == {"subtext-dev"}
+
+
+@pytest.mark.integration
+def test_profile_option_is_not_offered_where_aws_is_unused(cfg: MeetingConfig) -> None:
+    """AWS を使わないサブコマンドには `--profile` を付けない（誤解を招く指定を作らない）。"""
+    for command in ("record", "stop", "status", "cost", "slack"):
+        with pytest.raises(SystemExit):
+            main([command, "--profile", "x"], cfg=cfg, run=_ok_runner())
