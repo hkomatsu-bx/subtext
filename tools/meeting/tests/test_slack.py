@@ -57,7 +57,6 @@ def test_build_parent_extracts_decision_and_todo() -> None:
 @pytest.mark.unit
 def test_build_parent_structures_with_numbering_and_footer() -> None:
     md = (
-        "# 議事録\n"
         "## 決定事項\n- **A社対応**: 承認\n- B案を採用\n"
         "  - 補足の小項目\n---\n"
         "## ToDo\n- [ ] タスクX（担当: 自分）\n\n"
@@ -68,11 +67,58 @@ def test_build_parent_structures_with_numbering_and_footer() -> None:
     assert "1. *A社対応*: 承認" in parent  # トップ項目は番号付き＋太字変換
     assert "2. B案を採用" in parent
     assert "    • 補足の小項目" in parent  # 小項目は • インデント
-    assert "• タスクX（担当: 自分）" in parent
+    assert "☐ タスクX（担当: 自分）" in parent  # 未完了チェックボックス
     assert parent.rstrip().endswith(slack._PARENT_FOOTER)
     assert "論点" not in parent  # 論点は親に含めない
     assert "---" not in parent  # 水平線は除去
     assert "**" not in parent and "## " not in parent
+
+
+@pytest.mark.unit
+def test_build_parent_formats_multiline_todo_with_blank_line_between_items() -> None:
+    """ToDo の担当・期限・完了条件（インデント小項目）を整形し、2件目以降の前に空行を入れる。"""
+    md = (
+        "## ToDo\n"
+        "- [ ] タスクA\n"
+        "    - 担当: 田中\n"
+        "    - 期限: 2026-07-31\n"
+        "    - 完了条件: 提出済みであること\n"
+        "\n"
+        "- [x] タスクB\n"
+        "    - 担当: 未定\n"
+    )
+    parent = slack.build_parent(_SESSION, md)
+    lines = parent.splitlines()
+    a_idx = lines.index("☐ タスクA")
+    assert lines[a_idx + 1] == "    • 担当: 田中"
+    assert lines[a_idx + 2] == "    • 期限: 2026-07-31"
+    assert lines[a_idx + 3] == "    • 完了条件: 提出済みであること"
+    assert lines[a_idx + 4] == ""  # 2件目の前に空行
+    assert lines[a_idx + 5] == "☑ タスクB"
+
+
+@pytest.mark.unit
+def test_build_parent_includes_meeting_name_datetime_and_participants() -> None:
+    """先頭ヘッダー（BR-SUM-09）の会議名・日時・参加者を親メッセージに載せる。"""
+    md = (
+        "# 損保JP様 定例会\n"
+        "- 日時: 2026-06-25 23:19\n"
+        "- 参加者: 和田、小松、小島\n"
+        "\n"
+        "## 決定事項\n- A を承認\n"
+    )
+    parent = slack.build_parent(_SESSION, md)
+    lines = parent.splitlines()
+    assert lines[0] == "*損保JP様 定例会*"
+    assert lines[1] == "日時: 2026-06-25 23:19"
+    assert lines[2] == "参加者: 和田、小松、小島"
+
+
+@pytest.mark.unit
+def test_build_parent_falls_back_to_session_title_when_no_meeting_name() -> None:
+    """会議名ヘッダーが無い議事録では、従来通りセッションIDから日時タイトルを作る。"""
+    parent = slack.build_parent("20260728-113105", "## 決定事項\n- A を承認\n")
+    assert parent.splitlines()[0] == "*2026-07-28 11:31 議事録*"
 
 
 @pytest.mark.unit
@@ -89,15 +135,53 @@ def test_build_parent_fallbacks_to_head_when_no_sections() -> None:
 
 @pytest.mark.unit
 def test_to_mrkdwn_converts_heading_bold_checkbox_and_hr() -> None:
-    src = "## 決定事項\n- **重要**: 承認\n- [ ] タスクA\n---\n通常行"
+    src = "## 決定事項\n- **重要**: 承認\n- [ ] タスクA\n- [x] タスクB\n---\n通常行"
     result = slack.to_mrkdwn(src)
     lines = result.splitlines()
     assert lines[0] == "*決定事項*"  # 見出し → 太字
     assert lines[1] == "• *重要*: 承認"  # 箇条書き + 太字（**→*）
-    assert lines[2] == "• タスクA"  # チェックボックス → bullet
-    assert lines[3] == ""  # 水平線 → 空行
-    assert lines[4] == "通常行"  # 素通し
+    assert lines[2] == "☐ タスクA"  # 未完了チェックボックス
+    assert lines[3] == "☑ タスクB"  # 完了チェックボックス
+    assert lines[4] == ""  # 水平線 → 空行
+    assert lines[5] == "通常行"  # 素通し
     assert "**" not in result  # 二重アスタリスクが残らない
+
+
+@pytest.mark.unit
+def test_to_mrkdwn_inserts_blank_line_before_heading_when_missing() -> None:
+    """元の Markdown で見出し前の空行が省かれていても、変換後は必ず空行を1行入れる。"""
+    src = "## 決定事項\n- A を承認\n## ToDo\n- タスクX"
+    lines = slack.to_mrkdwn(src).splitlines()
+    assert lines == ["*決定事項*", "• A を承認", "", "*ToDo*", "• タスクX"]
+
+
+@pytest.mark.unit
+def test_build_thread_body_removes_decision_and_todo_with_note() -> None:
+    """親メッセージが既に表示している決定事項・ToDo は、スレッド全文からは除く（重複防止）。"""
+    body = slack.build_thread_body(_MINUTES)
+    assert slack._THREAD_DEDUP_NOTE in body
+    assert "決定事項" not in body.replace(slack._THREAD_DEDUP_NOTE, "")
+    assert "ToDo" not in body.replace(slack._THREAD_DEDUP_NOTE, "")
+    assert "予算について議論" in body  # 論点セクションは残す
+
+
+@pytest.mark.unit
+def test_build_thread_body_no_note_when_nothing_stripped() -> None:
+    """決定事項・ToDo が無い議事録では、重複が無いので注記も付けない。"""
+    md = "## 論点・議論サマリ\n- 予算について議論\n"
+    assert slack.build_thread_body(md) == md.rstrip("\n")
+    assert slack._THREAD_DEDUP_NOTE not in slack.build_thread_body(md)
+
+
+@pytest.mark.unit
+def test_post_minutes_thread_excludes_decision_and_todo() -> None:
+    """post_minutes が投稿するスレッド本文に決定事項・ToDo が含まれない（実際の投稿での重複防止）。"""
+    poster, calls = _make_poster(ts="999.000")
+    slack.post_minutes(_SESSION, _MINUTES, "C1", token="xoxb-x", approved=True, poster=poster, emit=lambda _m: None)
+    thread_text = "\n".join(c["text"] for c in calls[1:])
+    assert "A を承認" not in thread_text
+    assert "田中" not in thread_text
+    assert "予算について議論" in thread_text
 
 
 @pytest.mark.unit
@@ -459,7 +543,8 @@ def test_post_minutes_paces_thread_chunks() -> None:
     poster, calls = _make_poster(ts="999.000")
     slept: list[float] = []
 
-    long_minutes = "## 決定事項\n" + "\n".join(f"- 項目{i} " + "x" * 200 for i in range(60))
+    # 決定事項・ToDo はスレッドから重複除去されるため、除去対象外のセクションで長文を作る。
+    long_minutes = "## 論点・議論サマリ\n" + "\n".join(f"- 項目{i} " + "x" * 200 for i in range(60))
     slack.post_minutes(
         _SESSION,
         long_minutes,

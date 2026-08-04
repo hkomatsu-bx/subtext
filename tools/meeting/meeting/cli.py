@@ -382,7 +382,9 @@ def _confirm_and_post(
     プレビューに含め、y/N 承認ゲートが投稿内容全体をカバーするようにする。
     """
     parent = slack.build_parent(session, minutes_md)
-    body = slack.to_mrkdwn(minutes_md)
+    # post_minutes と同じ入力（決定事項・ToDo を除いた本文）でプレビューする。
+    # ここで minutes_md をそのまま渡すと、実際の投稿内容（重複除去済み）とプレビューがずれる。
+    body = slack.to_mrkdwn(slack.build_thread_body(minutes_md))
     print("== Slack 投稿プレビュー ==")
     print(f"  投稿先チャンネル: {channel}")
     print("  親メッセージ（要約）:")

@@ -87,7 +87,8 @@ def has_slack_token(repo_root: Path, env: Mapping[str, str]) -> bool:
 # 見出しは行頭 `#`（インデント無し）のみ対象とする（インデント `#` はコード等なので除外）。
 _HEADING_RE = re.compile(r"^#{1,6}\s+(.*\S)\s*$")
 _BOLD_RE = re.compile(r"\*\*(.+?)\*\*")
-_CHECKBOX_RE = re.compile(r"^(\s*)[-*]\s+\[[ xX]\]\s+")
+_CHECKBOX_UNCHECKED_RE = re.compile(r"^(\s*)[-*]\s+\[\s\]\s+")
+_CHECKBOX_CHECKED_RE = re.compile(r"^(\s*)[-*]\s+\[[xX]\]\s+")
 _BULLET_RE = re.compile(r"^(\s*)[-*]\s+")
 # 親メッセージ整形用（トップ階層の箇条書き／インデントされた小項目）。
 _TOP_BULLET_RE = re.compile(r"^[-*]\s+")
@@ -98,9 +99,10 @@ def to_mrkdwn(markdown: str) -> str:
     """GitHub Markdown を Slack mrkdwn へ最小変換する（純粋）。
 
     Slack は標準 Markdown を解釈しないため、露出しがちな記法だけを寄せる:
-      - 見出し `## X` → `*X*`（Slack に見出しが無いので太字化）
+      - 見出し `## X` → `*X*`（Slack に見出しが無いので太字化）。見出しの前には必ず空行を1行入れる
+        （元の Markdown で見出し前の空行が省かれていても、セクション同士が詰まって見えないようにする）
       - 太字 `**X**` → `*X*`（Slack の太字は一重アスタリスク）
-      - チェックボックス `- [ ]` → `• `、箇条書き `- ` → `• `
+      - チェックボックス `- [ ]` → `☐ `（未完了）、`- [x]` → `☑ `（完了）、箇条書き `- ` → `• `
       - 水平線 `---` → 空行
     ` ``` ` フェンスで囲まれたコードブロックは変換せず素通しする（コマンド例の破壊を防ぐ）。
     完全な Markdown 解釈は行わない（リンクや表など稀な記法は素通し。YAGNI）。
@@ -117,13 +119,16 @@ def to_mrkdwn(markdown: str) -> str:
             continue
         heading = _HEADING_RE.match(line)
         if heading:
+            if out and out[-1].strip():
+                out.append("")  # 見出し前の空行を保証する（セクション間の詰まりを防ぐ）
             # 見出し内の `**bold**` は記号を外してから単一 * で包む（* の不均衡を防ぐ）。
             out.append(f"*{_BOLD_RE.sub(r'\1', heading.group(1))}*")
             continue
         if line.strip() == "---":
             out.append("")
             continue
-        line = _CHECKBOX_RE.sub(r"\1• ", line)
+        line = _CHECKBOX_CHECKED_RE.sub(r"\1☑ ", line)
+        line = _CHECKBOX_UNCHECKED_RE.sub(r"\1☐ ", line)
         line = _BULLET_RE.sub(r"\1• ", line)
         out.append(_BOLD_RE.sub(r"*\1*", line))
     return "\n".join(out)
@@ -132,14 +137,65 @@ def to_mrkdwn(markdown: str) -> str:
 # ---------------------------------------------------------------------------
 # 純粋ロジック（親メッセージ生成・本文分割）
 # ---------------------------------------------------------------------------
+_MEETING_NAME_RE = re.compile(r"^#\s+(.*\S)\s*$")
+_DATETIME_FIELD_RE = re.compile(r"^-\s*日時:\s*(.+)$")
+_PARTICIPANTS_FIELD_RE = re.compile(r"^-\s*参加者:\s*(.+)$")
+
+
+def _extract_header(markdown: str) -> tuple[str | None, str | None, str | None]:
+    """先頭ヘッダー（`# 会議名` / `- 日時: ...` / `- 参加者: ...`）を抽出する（純粋・BR-SUM-09）。
+
+    最初の `## ` 見出しに到達したら打ち切る（本文セクションを誤って拾わないようにする）。
+    """
+    meeting_name: str | None = None
+    meeting_datetime: str | None = None
+    participants: str | None = None
+    for line in markdown.splitlines():
+        if line.startswith("## "):
+            break
+        if meeting_name is None:
+            m = _MEETING_NAME_RE.match(line)
+            if m:
+                meeting_name = m.group(1)
+                continue
+        m = _DATETIME_FIELD_RE.match(line)
+        if m:
+            meeting_datetime = m.group(1).strip()
+            continue
+        m = _PARTICIPANTS_FIELD_RE.match(line)
+        if m:
+            participants = m.group(1).strip()
+    return meeting_name, meeting_datetime, participants
+
+
+def _body_after_header(markdown: str) -> str:
+    """最初の `## ` 見出し以降を返す（純粋）。無ければ入力をそのまま返す。
+
+    フォールバック表示（決定事項/ToDo が無い議事録）で、既に親の先頭に出したヘッダー
+    （会議名・日時・参加者）を本文側で重複させないために使う。
+    """
+    lines = markdown.splitlines()
+    for i, line in enumerate(lines):
+        if line.startswith("## "):
+            return "\n".join(lines[i:])
+    return markdown
+
+
 def build_parent(session: str, minutes_md: str, *, limit: int = _CHUNK_LIMIT) -> str:
     """親メッセージを構造化して組み立てる（純粋・mrkdwn）。
 
-    レイアウト: 日時タイトル → `■ 決定事項`（番号付き）→ `■ 主なToDo`（箇条書き）→ 脚注。
+    レイアウト: タイトル（会議名。無ければ日時ラベル）→ 日時 → 参加者 →
+    `■ 決定事項`（番号付き）→ `■ 主なToDo`（箇条書き）→ 脚注。
     決定事項/ToDo は minutes.md の該当セクションから抽出する。両方無い議事録は先頭本文で代替。
     全文（詳細）はスレッド返信側が担うため、親は要約に絞る。
     """
-    parts: list[str] = [f"*{_title_label(session)} 議事録*"]
+    meeting_name, meeting_datetime, participants = _extract_header(minutes_md)
+    title = meeting_name if meeting_name else f"{_title_label(session)} 議事録"
+    parts: list[str] = [f"*{title}*"]
+    if meeting_datetime:
+        parts.append(f"日時: {meeting_datetime}")
+    if participants:
+        parts.append(f"参加者: {participants}")
 
     decisions = _format_numbered(_section_body(minutes_md, _DECISION_KEYWORD))
     if decisions:
@@ -150,8 +206,8 @@ def build_parent(session: str, minutes_md: str, *, limit: int = _CHUNK_LIMIT) ->
         parts += ["", "*■ 主なToDo*", *todos]
 
     if not decisions and not todos:
-        # 見出しが無い議事録は先頭本文をそのまま mrkdwn 化して載せる。
-        parts += ["", to_mrkdwn(minutes_md.strip()[:_PARENT_FALLBACK_CHARS])]
+        # 見出しが無い議事録は先頭本文をそのまま mrkdwn 化して載せる（ヘッダー分は重複を避けて除く）。
+        parts += ["", to_mrkdwn(_body_after_header(minutes_md).strip()[:_PARENT_FALLBACK_CHARS])]
 
     parts += ["", _PARENT_FOOTER]
     text = "\n".join(parts).strip()
@@ -191,6 +247,42 @@ def _section_body(markdown: str, keyword: str) -> list[str]:
     return body or []
 
 
+_THREAD_DEDUP_NOTE = "_（決定事項・ToDo は上の要約メッセージをご覧ください）_"
+
+
+def _strip_sections(markdown: str, keywords: tuple[str, ...]) -> str:
+    """`keywords` のいずれかで始まる `## 見出し` セクションを、本文ごと除去する（純粋）。
+
+    親メッセージに全文相当を出しているセクション（決定事項・ToDo）を、スレッド全文から
+    重複除去するために使う（`_section_body` と同じ境界判定：keyword は前方一致）。
+    """
+    out: list[str] = []
+    skipping = False
+    for line in markdown.splitlines():
+        is_boundary = line.startswith("## ") or line.startswith("# ")
+        if is_boundary:
+            skipping = line.startswith("## ") and any(line[3:].strip().startswith(k) for k in keywords)
+            if skipping:
+                continue
+        if not skipping:
+            out.append(line)
+    return "\n".join(out)
+
+
+def build_thread_body(minutes_md: str) -> str:
+    """スレッド全文の元テキストを組み立てる（純粋）。
+
+    決定事項・ToDo は親メッセージが全文相当を表示済みのため、スレッドからは除いて重複を避ける
+    （除いた場合のみ、その旨の注記を先頭に添える）。
+    """
+    dedup_keywords = (_DECISION_KEYWORD, _TODO_KEYWORD)
+    has_summary = any(_section_body(minutes_md, k) for k in dedup_keywords)
+    stripped = _strip_sections(minutes_md, dedup_keywords)
+    if has_summary:
+        return f"{_THREAD_DEDUP_NOTE}\n\n{stripped}"
+    return stripped
+
+
 def _format_numbered(lines: list[str]) -> list[str]:
     """トップ階層の箇条書きを 1. 2. 3. に、インデント小項目を `•` に整形する（純粋）。"""
     out: list[str] = []
@@ -212,14 +304,31 @@ def _format_numbered(lines: list[str]) -> list[str]:
 
 
 def _format_bullets(lines: list[str]) -> list[str]:
-    """チェックボックス/箇条書きを `•` に揃える（担当・期限はそのまま残す・純粋）。"""
+    """チェックボックス（完了/未完了を区別）/箇条書きを整形する（純粋）。
+
+    担当・期限・完了条件などのサブ項目（インデントされた `- `）は `    • ` として残す。
+    トップ階層の項目が複数行にまたがっていても見分けられるよう、2件目以降の項目の前には
+    空行を1行入れる（1行に詰まっていると見落とされるため）。
+    """
     out: list[str] = []
+    first_item = True
     for line in lines:
         if not line.strip() or line.strip() == "---":
             continue
-        stripped = _CHECKBOX_RE.sub("", line)
-        stripped = _BULLET_RE.sub("", stripped)
-        out.append(f"• {_BOLD_RE.sub(r'*\1*', stripped)}")
+        sub = _SUB_BULLET_RE.match(line)
+        if sub:
+            out.append(f"    • {_BOLD_RE.sub(r'*\1*', line[sub.end():])}")
+            continue
+        if _CHECKBOX_CHECKED_RE.match(line):
+            marker, stripped = "☑ ", _CHECKBOX_CHECKED_RE.sub("", line)
+        elif _CHECKBOX_UNCHECKED_RE.match(line):
+            marker, stripped = "☐ ", _CHECKBOX_UNCHECKED_RE.sub("", line)
+        else:
+            marker, stripped = "• ", _BULLET_RE.sub("", line)
+        if not first_item:
+            out.append("")
+        first_item = False
+        out.append(f"{marker}{_BOLD_RE.sub(r'*\1*', stripped)}")
     return out
 
 
@@ -286,8 +395,9 @@ def post_minutes(
     if not parent_ts:
         # 親 ts が取れないとスレッド化できず、全文がチャンネル直下へ流出する。中止する。
         raise ValueError("Slack 親メッセージの ts を取得できず、全文スレッド投稿を中止しました。")
-    # 全文も mrkdwn へ変換してから分割する（分割前に変換＝`**` がチャンク境界で割れない）。
-    chunks = split_body(to_mrkdwn(minutes_md))
+    # 決定事項・ToDo は親で表示済みのため除いてから mrkdwn へ変換し分割する
+    # （分割前に変換＝`**` がチャンク境界で割れない）。
+    chunks = split_body(to_mrkdwn(build_thread_body(minutes_md)))
     for index, chunk in enumerate(chunks):
         if index:
             sleep(_CHUNK_INTERVAL_SEC)  # 連投でレート制限に当たり、途中で失敗するのを避ける
