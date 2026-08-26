@@ -77,25 +77,49 @@ class MaterialText:
 class MaterialsResult:
     """`collect` の結果。`included` は要約プロンプトへ渡す資料、`excluded` は上限超過等で除外した
     資料（ファイル名と理由）。`warnings` は未対応拡張子・抽出不能等の案件別メッセージ。
+
+    `fingerprints` は**見たファイルすべて**（採用・除外・抽出不能を問わない）の
+    (ファイル名, 内容ハッシュ) である。差分検知（`needs_extraction`）はこれだけを見る。
+    採用分だけを台帳にすると、抽出できなかったファイル（スキャン PDF・未対応拡張子）が
+    materials/ に居座るたびに「未知のファイルがある」と判定され続け、要約段の再実行＝
+    **Bedrock 再課金が実行のたびに起きる**（FR-MAT-02 / FR-MAT-06 の前提）。
+    ハッシュを取れなかったファイルは空文字を持ち、存在の有無だけで比較する。
     """
 
     included: tuple[MaterialText, ...] = ()
     excluded: tuple[tuple[str, str], ...] = ()  # (file_name, reason)
     warnings: tuple[str, ...] = ()
+    fingerprints: tuple[tuple[str, str], ...] = ()  # (file_name, content_hash)
 
     def to_json(self) -> dict[str, Any]:
         return {
             "materials": [m.to_json() for m in self.included],
             "excluded": [{"fileName": name, "reason": reason} for name, reason in self.excluded],
             "warnings": list(self.warnings),
+            "fingerprints": [{"fileName": name, "contentHash": digest} for name, digest in self.fingerprints],
         }
 
     @staticmethod
     def from_json(data: dict[str, Any]) -> "MaterialsResult":
+        included = tuple(MaterialText.from_json(m) for m in data.get("materials", []))
+        excluded = tuple((str(e["fileName"]), str(e["reason"])) for e in data.get("excluded", []))
+        raw_fingerprints = data.get("fingerprints")
+        if raw_fingerprints is None:
+            # `fingerprints` を持たない旧形式のキャッシュ。採用分はハッシュを流用し、除外分は
+            # 存在のみ（空ハッシュ）で引き継ぐ。無いものとして扱うと、既存セッションの初回実行が
+            # 一律で再抽出＝再要約（課金）になるため橋を架ける。
+            fingerprints = tuple(
+                [(m.file_name, m.content_hash) for m in included] + [(name, "") for name, _ in excluded]
+            )
+        else:
+            fingerprints = tuple(
+                (str(f["fileName"]), str(f.get("contentHash", ""))) for f in raw_fingerprints
+            )
         return MaterialsResult(
-            included=tuple(MaterialText.from_json(m) for m in data.get("materials", [])),
-            excluded=tuple((str(e["fileName"]), str(e["reason"])) for e in data.get("excluded", [])),
+            included=included,
+            excluded=excluded,
             warnings=tuple(str(w) for w in data.get("warnings", [])),
+            fingerprints=fingerprints,
         )
 
     def is_empty(self) -> bool:
@@ -107,13 +131,29 @@ def content_hash(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def extract_one(path: Path) -> MaterialText:
-    """1ファイルを抽出する。未対応拡張子・抽出不能は `PipelineError`（呼び出し側が警告に変換する）。"""
+def _safe_content_hash(path: Path) -> str:
+    """`content_hash` の失敗許容版（読めなければ空文字）。
+
+    差分検知の台帳は「見たファイルすべて」を載せるため、抽出できないファイル（権限・共有ロック・
+    読取エラー）でも名前だけは記録できるようにする。空ハッシュは「内容不明」を意味し、
+    比較は存在の有無だけで行う。
+    """
+    try:
+        return content_hash(path)
+    except OSError:
+        return ""
+
+
+def extract_one(path: Path, *, content_digest: str | None = None) -> MaterialText:
+    """1ファイルを抽出する。未対応拡張子・抽出不能は `PipelineError`（呼び出し側が警告に変換する）。
+
+    `content_digest` を渡すと内容ハッシュの再計算を省く（`collect` が差分検知用に先に計算する）。
+    """
     suffix = path.suffix.lower()
     if suffix not in _SUPPORTED_SUFFIXES:
         raise PipelineError(f"未対応の資料形式です（対象外）: {path.name}", failed_stage=_STAGE)
 
-    digest = content_hash(path)
+    digest = content_digest if content_digest else content_hash(path)
     if suffix in (".txt", ".md"):
         return MaterialText(
             file_name=path.name,
@@ -195,11 +235,15 @@ def collect(paths: tuple[Path, ...], *, max_total_chars: int) -> MaterialsResult
     included: list[MaterialText] = []
     excluded: list[tuple[str, str]] = []
     warnings: list[str] = []
+    fingerprints: list[tuple[str, str]] = []
     total = 0
 
     for path in paths:
+        # 抽出の成否に関わらず「見た」ことを記録する（差分検知の母集団。MaterialsResult 参照）。
+        digest = _safe_content_hash(path)
+        fingerprints.append((path.name, digest))
         try:
-            material = extract_one(path)
+            material = extract_one(path, content_digest=digest)
         except PipelineError as exc:
             warnings.append(str(exc))
             continue
@@ -209,7 +253,12 @@ def collect(paths: tuple[Path, ...], *, max_total_chars: int) -> MaterialsResult
         included.append(material)
         total += material.char_count
 
-    return MaterialsResult(included=tuple(included), excluded=tuple(excluded), warnings=tuple(warnings))
+    return MaterialsResult(
+        included=tuple(included),
+        excluded=tuple(excluded),
+        warnings=tuple(warnings),
+        fingerprints=tuple(fingerprints),
+    )
 
 
 def format_for_prompt(result: MaterialsResult) -> str:
@@ -248,19 +297,19 @@ def needs_extraction(materials_dir: Path, cache: MaterialsResult | None) -> bool
     """`materials_dir` の内容がキャッシュと一致しないか（再抽出が必要か）を判定する（純粋に近い）。
 
     キャッシュが無ければ常に True。ファイルの追加・削除・内容変更（`content_hash` 不一致）の
-    いずれかがあれば True。除外・警告のみで `included` が空のキャッシュも「一致」の対象に含める
-    （0件の資料フォルダで毎回再抽出しないため）。
+    いずれかがあれば True。比較の母集団は `fingerprints`（見たファイルすべて）で、抽出できなかった
+    ファイルも含む。採用分だけを見ると、スキャン PDF 等が materials/ に残っている間ずっと
+    「未知のファイルがある」と判定され、要約段の再実行＝Bedrock 再課金が毎回起きる。
+    内容ハッシュが空（読取不能だったファイル）は存在の有無だけで比較する。
     """
     if cache is None:
         return True
+    recorded = dict(cache.fingerprints)
     if not materials_dir.is_dir():
-        return bool(cache.included) or bool(cache.excluded)  # 資料が消えたのに前回結果が残っている
-    current_files = {p.name for p in materials_dir.iterdir() if p.is_file()}
-    cached_files = {m.file_name for m in cache.included} | {name for name, _ in cache.excluded}
-    if current_files != cached_files:
+        return bool(recorded)  # 資料が消えたのに前回結果が残っている
+    current = {p.name: p for p in materials_dir.iterdir() if p.is_file()}
+    if set(current) != set(recorded):
         return True
-    for material in cache.included:
-        candidate = materials_dir / material.file_name
-        if not candidate.is_file() or content_hash(candidate) != material.content_hash:
-            return True
-    return False
+    return any(
+        recorded[name] and _safe_content_hash(path) != recorded[name] for name, path in current.items()
+    )

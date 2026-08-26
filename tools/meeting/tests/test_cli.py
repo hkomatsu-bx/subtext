@@ -267,3 +267,57 @@ def test_materials_command_errors_when_nothing_resolved(cfg: MeetingConfig, repo
     out = capsys.readouterr().out
     assert rc == 1
     assert "投入するファイルがありませんでした" in out
+
+
+@pytest.mark.integration
+def test_materials_command_rejects_unknown_session(cfg: MeetingConfig, capsys) -> None:
+    """存在しないセッションIDへの投入を拒否する（L-1: 綴り違いで資料が迷子になるのを防ぐ）。"""
+    rc = main(["materials", "typo-session", "whatever.txt"], cfg=cfg, run=_ok_runner())
+
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "セッション typo-session が見つかりません" in err
+    assert not (cfg.session_out_dir("typo-session")).exists()
+
+
+@pytest.mark.integration
+def test_minutes_force_summarize_passes_stage_flag(cfg: MeetingConfig, repo: Path) -> None:
+    """`--force-summarize` は Unit B へ `--stage summarized` を渡す（M-6: 手編集の復旧経路）。"""
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    cmds: list[list[str]] = []
+
+    def run(cmd, **kwargs):
+        cmds.append(cmd)
+        write_pipeline_outputs(repo, _SESSION)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    rc = main(["minutes", _SESSION, "--force-summarize"], cfg=cfg, run=run)
+
+    assert rc == 0
+    assert any(cmd[-2:] == ["--stage", "summarized"] for cmd in cmds)
+
+
+@pytest.mark.integration
+def test_minutes_force_summarize_warns_about_recharge(cfg: MeetingConfig, repo: Path, capsys) -> None:
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+
+    def run(cmd, **kwargs):
+        write_pipeline_outputs(repo, _SESSION)
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    main(["minutes", _SESSION, "--force-summarize"], cfg=cfg, run=run)
+
+    out = capsys.readouterr().out
+    assert "手編集済みの議事録は破棄" in out
+    assert "再課金" in out
+
+
+@pytest.mark.integration
+def test_minutes_force_summarize_conflicts_with_claude(cfg: MeetingConfig, repo: Path, capsys) -> None:
+    """Claude 経路は Bedrock 要約を踏まないため作り直す対象が無い（Unit B 側でも排他）。"""
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+
+    rc = main(["minutes", _SESSION, "--claude", "--force-summarize"], cfg=cfg, run=_ok_runner())
+
+    assert rc == 1
+    assert "併用できません" in capsys.readouterr().err

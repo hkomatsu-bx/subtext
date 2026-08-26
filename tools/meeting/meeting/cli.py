@@ -125,6 +125,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_minutes.add_argument(
         "--claude", action="store_true", help="Bedrock 要約をスキップ（Claude 生成経路。実名 PII を外部送信）"
     )
+    p_minutes.add_argument(
+        "--force-summarize",
+        action="store_true",
+        help="要約段を作り直す（手編集済み議事録を破棄し Bedrock を再課金。②議事録編集の復旧経路）",
+    )
     _add_profile_option(p_minutes)
     p_minutes.set_defaults(handler=_cmd_minutes)
 
@@ -267,7 +272,14 @@ def _cmd_minutes(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) -> i
         )
         return 1
 
-    rc = pipeline.run_minutes_pipeline(cfg, session, claude=args.claude, run=run)
+    if args.force_summarize and args.claude:
+        # Claude 経路は Bedrock 要約を踏まないため作り直す対象が無い（Unit B 側でも排他）。
+        print("エラー: --force-summarize は --claude と併用できません。", file=sys.stderr)
+        return 1
+
+    rc = pipeline.run_minutes_pipeline(
+        cfg, session, claude=args.claude, run=run, force_summarize=args.force_summarize
+    )
     if rc != 0:
         return rc
 
@@ -432,6 +444,15 @@ def _cmd_materials(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) ->
     （FR-16：連携はファイルの受け渡しのみ）。ここではファイルの解決とコピーだけを行う。
     """
     session = runner.resolve_session(cfg, args.session)
+    if runner.detect_stage(cfg, session) is Stage.NO_RECORDING:
+        # セッション ID の綴り違いを黙って通すと `data/out/<typo>/materials/` を作り、資料は
+        # どの議事録にも反映されないまま残る（次の実行でも拾われない）。
+        print(
+            f"エラー: セッション {session} が見つかりません（録音も取込も存在しません）。"
+            "`meeting status` でセッションIDを確認してください。",
+            file=sys.stderr,
+        )
+        return 1
     resolved, warnings = materials_mod.resolve_paths(tuple(args.paths))
     for warning in warnings:
         print(f"⚠ {warning}")

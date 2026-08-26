@@ -48,10 +48,13 @@ def run_minutes_pipeline(
     claude: bool,
     run: SubprocessRunner,
     emit: Emit = print,
+    force_summarize: bool = False,
 ) -> int:
     """議事録パイプラインを1回：見積提示→実行→台帳追記→閾値警告。rc を返す。
 
     次段の案内は行わない（呼び出し側の責務。`next_steps_lines` を使う）。
+    `force_summarize` は要約段の作り直し（手編集済み議事録の破棄を含む）で、Bedrock を必ず
+    呼ぶ＝再課金する。そのため見積の行にも明示する。
     """
     # 1) 事前見積（Transcribe は録音秒数から算出可能）と今月累計を提示。
     tr_est = runner.estimate_transcribe(cfg, session)
@@ -59,6 +62,8 @@ def run_minutes_pipeline(
     month_so_far = ledger.monthly_total(ledger.load(cfg.ledger_path), month)
     emit(f"== 議事録パイプライン: {session} ==")
     emit(f"  経路        : {'Claude 生成（PII 外部送信）' if claude else 'Bedrock 生成'}")
+    if force_summarize:
+        emit("  指定        : 要約段を作り直す（手編集済みの議事録は破棄され Bedrock を再課金します）")
     emit(f"  今回見積    : {tr_est.detail} = ${tr_est.usd}")
     emit(
         f"  今月累計    : ${month_so_far} （上限 単発 ${cfg.thresholds.per_run_usd} / "
@@ -67,7 +72,7 @@ def run_minutes_pipeline(
 
     # 2) 自動実行（課金境界。合意済: 実行可・ただし台帳必須）。
     emit("  パイプライン実行中（AWS 課金が発生します）...")
-    result = runner.run_pipeline(cfg, session, claude=claude, runner=run)
+    result = runner.run_pipeline(cfg, session, claude=claude, force_summarize=force_summarize, runner=run)
 
     # 3) 実行済みの段を概算で台帳追記（金額は概算・正は Cost Explorer。再実行の二重計上は
     #    has_entry で防止）。実測課金額ではなく単価×実測根拠量（録音分/文字数）に基づく。
@@ -156,46 +161,76 @@ def _pending_llm_costs(
     """
     pending: list[_PendingCost] = []
     correct_est = runner.estimate_correction(cfg, session)
-    if correct_est is not None and not ledger.has_entry(entries, session, correct_est.stage):
+    correct_artifact = cfg.session_out_dir(session) / "final_transcript.json"
+    if correct_est is not None and _stage_not_yet_recorded(correct_artifact, session, correct_est.stage, entries):
         pending.append(
             _PendingCost(
                 correct_est,
-                {"chars": float(runner.transcript_char_count(cfg, session))},
+                _llm_units(runner.transcript_char_count(cfg, session), correct_artifact),
                 cfg.pricing.bedrock_input_usd_per_1k,
             )
         )
 
     sum_est = runner.estimate_summary(cfg, session, claude=claude)
+    summary_artifact = _summary_artifact(cfg, session, claude=claude)
     if (
         sum_est is not None
         and runner.summarize_ran(cfg, session, claude=claude)
-        and _summary_stage_not_yet_recorded(cfg, session, sum_est.stage, entries)
+        and _stage_not_yet_recorded(summary_artifact, session, sum_est.stage, entries)
     ):
         chars = runner.transcript_char_count(cfg, session) + runner.materials_char_count(cfg, session)
         price = cfg.pricing.claude_input_usd_per_1k if claude else cfg.pricing.bedrock_input_usd_per_1k
-        pending.append(_PendingCost(sum_est, {"chars": float(chars)}, price))
+        pending.append(_PendingCost(sum_est, _llm_units(chars, summary_artifact), price))
     return pending
 
 
-def _summary_stage_not_yet_recorded(
-    cfg: MeetingConfig, session: str, stage: str, entries: list[LedgerEntry]
-) -> bool:
-    """要約段の今回実行がまだ台帳に無いか（`meeting_info.json` 更新による再課金の取り込み）。
+def _summary_artifact(cfg: MeetingConfig, session: str, *, claude: bool) -> Path | None:
+    """要約段の計上根拠となる成果物（その段の呼び出しが**自ら書いた**ファイルに限る）。
 
-    `minutes.md` の mtime が前回記録より新しければ「記録していない実行」とみなす。Bedrock 経路
-    （stage="bedrock"）のみが対象（Claude 経路は `final_transcript.json` を計上点にし、
-    meeting_info.json は要約段=Bedrock 呼び出しにしか影響しないため再課金が起きない）。
+    Bedrock 経路は `minutes.md` が要約呼び出しの成果物そのもの。Claude 経路は None を返す。
+    計上点の `final_transcript.json` は命名・補正という**ローカル段**が書くファイルで、
+    Claude へ何かを送った証拠ではない。これを根拠に再計上すると、話者名を直しただけの
+    非課金の再実行で `piiSent` の行が増える（実際には何も送っていない）。
     """
+    return None if claude else cfg.session_out_dir(session) / "minutes.md"
+
+
+def _llm_units(chars: int, artifact: Path | None) -> dict[str, float]:
+    """LLM 段の根拠量（文字数）に、再課金判定用の成果物 mtime を添える。"""
+    units = {"chars": float(chars)}
+    if artifact is not None and artifact.is_file():
+        units[ledger.ARTIFACT_MTIME_UNIT] = artifact.stat().st_mtime
+    return units
+
+
+def _stage_not_yet_recorded(
+    artifact: Path | None, session: str, stage: str, entries: list[LedgerEntry]
+) -> bool:
+    """当該段の今回実行がまだ台帳に無いか（同一段の再課金を取りこぼさない）。
+
+    Bedrock を呼ぶ段（C2 補正・Bedrock 要約）は話者名や会議情報の修正で再実行され、そのたびに
+    実際に課金される。「同一セッション・同一段の記録があるか」だけで見ると2回目以降の実課金が
+    記録されず、「課金するなら台帳必須」という自動実行の前提が破れる。**その段が自ら書いた
+    成果物**が前回記録より新しければ、新しい実行と判定する。
+
+    比較は前回記録に残る成果物 mtime を優先する（小数秒まで比較でき、同一秒内の再生成を
+    取りこぼさない）。このキーを持たない過去行は `ts`（秒精度）へ倒すため、同一秒内の再生成を
+    取りこぼし得る（Bedrock 呼び出しは秒単位で掛かるため実運用では起きない）。
+
+    `artifact` が None（Claude 経路）は成果物で実行を判定できないため、従来どおり存在チェックで
+    重複を防ぐ（`_summary_artifact` 参照）。
+    """
+    if artifact is None:
+        return not ledger.has_entry(entries, session, stage)
+    recorded_mtime = ledger.latest_artifact_mtime(entries, session, stage)
+    if recorded_mtime is not None:
+        return artifact.is_file() and artifact.stat().st_mtime > recorded_mtime
     latest = ledger.latest_entry_epoch(entries, session, stage)
     if latest is None:
         return True
-    minutes_path = cfg.session_out_dir(session) / "minutes.md"
-    if not minutes_path.is_file():
+    if not artifact.is_file():
         return False
-    # 秒精度で比較する（台帳の ts は now_iso() で秒精度に丸められる一方、mtime は小数秒を
-    # 持つため、同じ壁時計の秒内に書込→記録が起きると mtime が常に「新しい」と誤判定し、
-    # 再課金していない同一実行の2回目呼び出しでも毎回 pending になってしまう）。
-    return int(minutes_path.stat().st_mtime) > int(latest)
+    return int(artifact.stat().st_mtime) > int(latest)
 
 
 def _append_pending_costs(cfg: MeetingConfig, session: str, month: str, pending: list[_PendingCost]) -> float:

@@ -195,17 +195,22 @@ class MinutesFlow:
             return
 
         def on_result(fields: dict[str, str] | None) -> None:
-            if fields is not None:
-                data = meeting_info.build(
-                    fields.get("title", ""), fields.get("datetime", ""), fields.get("participants", "")
-                )
-                try:
-                    meeting_info.save(path, data)
-                except ValueError as exc:
-                    self._app.log_line(f"エラー: {exc}")
-                    return
-                if not meeting_info.is_empty(data):
-                    self._app.log_line("会議情報を保存しました（実名等はログに出しません）。")
+            # スキップ（Esc / キャンセル）も空の meeting_info.json として記録する。ファイルを
+            # 作らないと「既存ファイルがあれば訊かない」判定に掛からず、以降の実行で毎回訊かれる
+            # （ウィザード側は空入力でも保存する。CLI と TUI で挙動を分けない）。
+            fields = fields or {}
+            data = meeting_info.build(
+                fields.get("title", ""), fields.get("datetime", ""), fields.get("participants", "")
+            )
+            try:
+                meeting_info.save(path, data)
+            except ValueError as exc:
+                self._app.log_line(f"エラー: {exc}")
+                return
+            if meeting_info.is_empty(data):
+                self._app.log_line("会議情報の記入はありません（既存の算出値のまま生成します）。")
+            else:
+                self._app.log_line("会議情報を保存しました（実名等はログに出しません）。")
             self.launch(route, claude=claude)
 
         self._app.push_screen(

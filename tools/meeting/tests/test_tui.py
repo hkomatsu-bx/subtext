@@ -24,7 +24,7 @@ from textual.content import Content
 from textual.pilot import Pilot
 from textual.widgets import Button, DataTable, Input, Log, Static, TextArea
 
-from meeting import ledger
+from meeting import ledger, slack
 from meeting.config import MeetingConfig
 from meeting.tui import MeetingApp
 from meeting.tui_view import MIC_RED, MeetingCommands, strip_path_quotes
@@ -1317,8 +1317,12 @@ def test_meeting_info_modal_saves_filled_fields_and_launches_pipeline(cfg: Meeti
 
 
 @pytest.mark.integration
-def test_meeting_info_modal_skip_does_not_write_file(cfg: MeetingConfig, repo: Path) -> None:
-    """会議情報モーダルを Esc でスキップしても、記入なしのままパイプラインは続行する。"""
+def test_meeting_info_modal_skip_records_empty_file_and_continues(cfg: MeetingConfig, repo: Path) -> None:
+    """会議情報モーダルをスキップしても続行し、「訊いた」ことを空ファイルで記録する。
+
+    ファイルを残さないと「既存ファイルがあれば訊かない」判定に掛からず、以降の実行で毎回
+    訊かれる（ウィザードは空入力でも保存する。CLI と TUI で挙動を分けない）。
+    """
     write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
     _write_naming_template(repo)
     run, calls = _staged_runner([lambda cmd, kwargs: _write_transcript_and_minutes(repo)])
@@ -1339,7 +1343,13 @@ def test_meeting_info_modal_skip_does_not_write_file(cfg: MeetingConfig, repo: P
     _run_async(scenario())
 
     assert len(calls) == 1  # スキップしてもパイプラインは続行する。
-    assert not (cfg.session_out_dir(_SESSION) / "meeting_info.json").is_file()
+    info_path = cfg.session_out_dir(_SESSION) / "meeting_info.json"
+    assert info_path.is_file()
+    assert json.loads(info_path.read_text(encoding="utf-8")) == {
+        "title": "",
+        "datetime": "",
+        "participants": [],
+    }
 
 
 @pytest.mark.integration
@@ -2473,3 +2483,104 @@ def test_import_materials_cancel_does_not_copy(cfg: MeetingConfig, repo: Path, t
 
     assert "中止しました" in text
     assert not (cfg.session_out_dir(_SESSION) / "materials").is_dir()
+
+
+@pytest.mark.integration
+def test_slack_preview_matches_actual_thread_body(cfg: MeetingConfig, repo: Path) -> None:
+    """プレビューのスレッド全文が実投稿と同じ内容であること（M-3）。
+
+    `minutes_md` をそのまま見せると、実際の投稿（決定事項・ToDo を除き注記を付けた本文）と
+    食い違い、承認したものと送るものが違う状態になる（CLI 側は既に是正済み）。
+    """
+    minutes = (
+        "# 定例会\n- 日時: 2026-08-26 10:00\n\n"
+        "## 決定事項\n- 価格を決定（12:30）\n\n"
+        "## ToDo\n- [ ] 価格表を更新\n\n"
+        "## 論点・議論サマリ\n### 価格帯\n- 議論の中身\n"
+    )
+    cfg2 = _prepare_slack(cfg, repo, minutes)
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg2, run=_ok_runner(), post=lambda token, payload: {"ok": True, "ts": "1"})
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#slack")
+            await pilot.pause()
+            return app.screen.query_one("#slack-preview", Static).visual.plain
+
+    plain = _run_async(scenario())
+    expected_body = slack.to_mrkdwn(slack.build_thread_body(minutes))
+
+    assert expected_body in plain
+    # 親で表示済みの決定事項見出しはスレッド側から除かれ、その旨の注記が入る。
+    assert "決定事項・ToDo は上の要約メッセージをご覧ください" in plain
+
+
+@pytest.mark.integration
+def test_quit_is_refused_while_editing_minutes(cfg: MeetingConfig, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """編集中（外部エディタ起動中）は終了を拒否する（M-5）。
+
+    thread ワーカーは cancel_all では止まらないため、終了させるとエディタを閉じるまで
+    join 待ちで TUI が無反応になる。
+    """
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    write_pipeline_outputs(repo, _SESSION)
+    release = threading.Event()
+
+    def blocking_launch(path: Path) -> None:
+        release.wait(timeout=5)
+
+    monkeypatch.setattr("meeting.tui.edit_mod.default_launcher", lambda editor: blocking_launch)
+
+    async def scenario() -> tuple[str, bool]:
+        app = MeetingApp(cfg, run=_ok_runner())
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#edit-minutes")
+            await pilot.pause()
+            await app.action_quit()  # 編集中なので拒否される
+            await pilot.pause()
+            text = "\n".join(app.query_one("#log", Log).lines)
+            running = app.is_running
+            release.set()
+            await app.workers.wait_for_complete()
+            return text, running
+
+    text, still_running = _run_async(scenario())
+
+    assert "議事録を編集中です" in text
+    assert still_running is True  # 終了していない
+
+
+@pytest.mark.integration
+def test_delete_is_refused_while_editing_minutes(cfg: MeetingConfig, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """編集中のセッションは削除できない（M-5: 編集中のファイルを足元から消さない）。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    write_pipeline_outputs(repo, _SESSION)
+    release = threading.Event()
+
+    def blocking_launch(path: Path) -> None:
+        release.wait(timeout=5)
+
+    monkeypatch.setattr("meeting.tui.edit_mod.default_launcher", lambda editor: blocking_launch)
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=_ok_runner())
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#edit-minutes")
+            await pilot.pause()
+            await pilot.click("#delete-session")
+            await pilot.pause()
+            text = "\n".join(app.query_one("#log", Log).lines)
+            release.set()
+            await app.workers.wait_for_complete()
+            return text
+
+    text = _run_async(scenario())
+
+    assert "削除できません" in text
+    assert (cfg.session_out_dir(_SESSION) / "minutes.md").is_file()

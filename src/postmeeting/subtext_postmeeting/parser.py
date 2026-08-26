@@ -16,6 +16,10 @@ from .models import RawTranscript, StreamRole, TranscriptSegment
 # self 系統セグメント分割の休止しきい値（秒）。これを超える無音で区切る。
 _PAUSE_GAP_SEC = 1.0
 _SELF_LABEL = "self"
+# 語を空白で区切らない言語（分かち書きをしない）。日本語・中国語がこれに当たる。
+# これ以外の言語（`LANGUAGE=en-US` 等）で無空白連結すると `helloworld` のように語が
+# 潰れ、議事録も検索も読めなくなる。
+_UNSPACED_LANGUAGE_PREFIXES = ("ja", "zh", "yue")
 
 
 @dataclass(frozen=True)
@@ -37,7 +41,7 @@ def parse(raw_result: dict[str, Any], role: StreamRole, session_id: str, languag
     speaker_by_start = {} if role == StreamRole.SELF else _speaker_index(results.get("speaker_labels", {}))
 
     labeled = _assign_speakers(tokens, role, speaker_by_start)
-    segments = _build_segments(labeled)
+    segments = _build_segments(labeled, word_separator=_word_separator(language))
     model_info = {
         "jobName": raw_result.get("jobName"),
         "language": language,
@@ -119,8 +123,22 @@ def _assign_speakers(
     return labeled
 
 
-def _build_segments(labeled: list[tuple[str, _Token]]) -> list[TranscriptSegment]:
-    """話者の切替・休止でセグメント化する。"""
+def _word_separator(language: str) -> str:
+    """語をつなぐ区切り（純粋）。分かち書きしない言語は空文字、それ以外は空白。
+
+    既定の `ja-JP` は空文字で従来どおり。`LANGUAGE` は設定で変えられるため（FR-15）、
+    英語等を指定したときに語が潰れないようにする。
+    """
+    code = language.strip().lower()
+    return "" if any(code.startswith(prefix) for prefix in _UNSPACED_LANGUAGE_PREFIXES) else " "
+
+
+def _build_segments(labeled: list[tuple[str, _Token]], *, word_separator: str = "") -> list[TranscriptSegment]:
+    """話者の切替・休止でセグメント化する。
+
+    `word_separator` は発話語どうしをつなぐ文字（分かち書き言語では空白）。句読点は直前の語へ
+    区切りなしで連結する（`hello world .` にならないように）。
+    """
     segments: list[TranscriptSegment] = []
     cur_speaker: str | None = None
     texts: list[str] = []
@@ -163,6 +181,8 @@ def _build_segments(labeled: list[tuple[str, _Token]]) -> list[TranscriptSegment
             seg_start = token.start_sec
         cur_speaker = speaker
         seg_end = token.end_sec if token.end_sec is not None else seg_end
+        if texts and word_separator:
+            texts.append(word_separator)  # 分かち書き言語のみ語間に区切りを入れる
         texts.append(token.content)
         if token.confidence is not None:
             confidences.append(token.confidence)

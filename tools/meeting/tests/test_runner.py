@@ -794,3 +794,24 @@ def test_parse_auth_output_keeps_indented_remediation_lines() -> None:
         "指定された AWS プロファイルが見つかりません。",
         "  綴りを確認してください。",
     ]
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_force_summarize_adds_stage(cfg: MeetingConfig) -> None:
+    """`force_summarize` は `--stage summarized` を渡す（手編集済み議事録の作り直し）。"""
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=False, force_summarize=True)
+    assert cmd[-2:] == ["--stage", "summarized"]
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_force_summarize_ignored_for_claude(cfg: MeetingConfig) -> None:
+    """Claude 経路では付けない（Unit B 側で `--no-summarize` と排他のため起動が失敗する）。"""
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=True, force_summarize=True)
+    assert "--stage" not in cmd
+    assert "--no-summarize" in cmd
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_default_has_no_stage(cfg: MeetingConfig) -> None:
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=False)
+    assert "--stage" not in cmd

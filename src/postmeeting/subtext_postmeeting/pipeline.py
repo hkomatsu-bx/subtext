@@ -101,7 +101,9 @@ class PostMeetingPipeline:
         out_dir.mkdir(parents=True, exist_ok=True)
         paths = _Paths(out_dir)
 
-        forced = self._with_naming_updates(self._forced_stages(options.force, options.target_stage), paths)
+        forced = self._with_naming_updates(
+            self._forced_stages(options.force, options.target_stage), paths, materials_enabled=options.materials
+        )
 
         # 後始末は finally で全終了経路（完走・命名待ち停止・例外）に対し1回保証する
         # （ISS-13 / BR-H2-S3-01）。Transcribe 失敗など mid-pipeline 例外でも当該 session の
@@ -112,6 +114,9 @@ class PostMeetingPipeline:
             # L0: 認証事前チェック（課金段に入る前に1回・全段再利用なら省略, FR-H2-07/BR-H2-AUTH-02）
             if self._aws_will_be_used(rec, paths, forced, summarize=options.summarize):
                 self._check_credentials()
+
+            # L1.5: 入力の同一性照合（single モードのみ。同名の別音声で前回成果物を再利用しない）。
+            self._verify_same_media(rec, paths)
 
             # L3/L4: Transcribe（成果物が無い段のみ起動 → 再課金回避, BR-PIPE-04）
             raw_others, raw_self = self._ensure_transcribed(rec, paths, forced)
@@ -127,13 +132,18 @@ class PostMeetingPipeline:
             # L6.5: LLM 後処理補正（C2）。final_transcript.json を補正後で確定（FR-C2-04/05）。
             corrected = self._ensure_corrected(named, options.correct, paths, forced)
 
+            # L6.8: 付帯資料の抽出（③・非課金・ローカルのみ）。要約段の前に置くのは、
+            # --no-summarize（Claude 生成経路）でも materials.extracted.json を作るためである
+            # （Claude はこのファイルを読んで議事録を書く。抽出まで要約段に入れると経路ごと消える）。
+            materials_result = self._prepare_materials(paths, enabled=options.materials)
+
             # L7: 議事録生成。--no-summarize 指定時は要約段（Bedrock 課金）をスキップし、
             # final_transcript.json までで停止する。議事録は外部（Claude Code 等）で生成する想定。
             if not options.summarize:
                 return self._summarize_skipped_result(rec.session_id, paths)
             explicit_force = options.force or options.target_stage is Stage.SUMMARIZED
             self._ensure_summarized(
-                corrected, paths, forced, explicit_force=explicit_force, materials_enabled=options.materials
+                corrected, paths, forced, explicit_force=explicit_force, materials=materials_result
             )
 
             return self._completed_result(rec.session_id, paths, vtt=False)
@@ -163,7 +173,9 @@ class PostMeetingPipeline:
         out_dir.mkdir(parents=True, exist_ok=True)
         paths = _Paths(out_dir)
 
-        forced = self._with_naming_updates(self._forced_stages(force, target_stage), paths)
+        forced = self._with_naming_updates(
+            self._forced_stages(force, target_stage), paths, materials_enabled=materials
+        )
 
         # 統合済み（実名適用前）を永続化し、再実行で再利用できるようにする（FR-16 中間成果物）。
         if not paths.merged.is_file() or bool(forced & {Stage.MERGED}):
@@ -180,6 +192,9 @@ class PostMeetingPipeline:
         # 補正で LLM を踏む場合は _ensure_corrected 内で資格情報を確認する（FR-C2-08）。
         corrected = self._ensure_corrected(named, correct, paths, forced)
 
+        # L6.8: 付帯資料の抽出（③・非課金）。--no-summarize でも作る（理由は run() の同箇所）。
+        materials_result = self._prepare_materials(paths, enabled=materials)
+
         if not summarize:
             return self._summarize_skipped_result(merged.session_id, paths)
 
@@ -189,7 +204,7 @@ class PostMeetingPipeline:
             self._check_credentials()
         explicit_force = force or target_stage is Stage.SUMMARIZED
         self._ensure_summarized(
-            corrected, paths, forced, explicit_force=explicit_force, materials_enabled=materials
+            corrected, paths, forced, explicit_force=explicit_force, materials=materials_result
         )
 
         return self._completed_result(merged.session_id, paths, vtt=True)
@@ -322,7 +337,7 @@ class PostMeetingPipeline:
         forced: set[Stage],
         *,
         explicit_force: bool = False,
-        materials_enabled: bool = True,
+        materials: materials_mod.MaterialsResult | None = None,
     ) -> None:
         force = bool(forced & {Stage.TRANSCRIBED, Stage.MERGED, Stage.NAMED, Stage.CORRECTED, Stage.SUMMARIZED})
         if paths.minutes.is_file() and not force:
@@ -333,29 +348,37 @@ class PostMeetingPipeline:
             # 会議情報の更新等）で黒く上書きすると、手編集した内容が課金しないまま消える。
             # 明示の --force / --target-stage summarize のときだけ通す（BR-EDIT-01）。
             raise PipelineError(
-                f"議事録は手編集済みです（{paths.minutes}）。自動更新による上書きを止めました。"
-                f"上書きするには --force または --target-stage summarize を明示してください"
-                f"（生成直後の版は {paths.minutes_generated} に退避済みです）。",
+                f"議事録は手編集済みです（{paths.minutes}）。自動更新による上書きを止めました。\n"
+                f"  手編集を破棄して作り直すなら: `meeting minutes <session> --force-summarize`"
+                f"（または `subtext-postmeeting ... --stage summarized`）。\n"
+                f"  生成直後の版は {paths.minutes_generated} に退避済みです。",
                 failed_stage="summarize",
             )
         meeting_info = self._read_meeting_info(paths)
-        materials_text = ""
-        if materials_enabled:
-            materials_result = self._ensure_materials(paths)
-            materials_text = materials_mod.format_for_prompt(materials_result)
-            for warning in materials_result.warnings:
-                logger.warning("付帯資料: %s", warning)
-            for name, reason in materials_result.excluded:
-                logger.warning("付帯資料を除外しました: %s（%s）", name, reason)
+        materials_text = materials_mod.format_for_prompt(materials) if materials is not None else ""
         minutes = self._summarize(named, self._config, meeting_info=meeting_info, materials_text=materials_text)
         paths.minutes.write_text(minutes.markdown, encoding="utf-8")
         _write_json(paths.minutes_meta, minutes.to_json())  # 新規生成に伴い edited フラグはリセットされる
 
-    def _ensure_materials(self, paths: "_Paths") -> materials_mod.MaterialsResult:
-        """付帯資料を抽出する。キャッシュ（materials.extracted.json）と一致すれば再抽出しない
-        （FR-MAT-02。差し替え・追加のあるファイルのみ抽出コストが発生する＝ローカル処理だが
-        pptx/pdf の解析は無視できない処理コストを持つため、変更のないフォルダでは走らせない）。
+    def _prepare_materials(self, paths: "_Paths", *, enabled: bool) -> materials_mod.MaterialsResult | None:
+        """付帯資料を抽出し、除外・警告を操作者へ知らせる（③）。無効時は None。
+
+        キャッシュ（materials.extracted.json）と一致すれば再抽出しない（FR-MAT-02。差し替え・
+        追加のあるファイルだけが抽出コストを払う＝ローカル処理だが pptx/pdf の解析は軽くない）。
+        抽出は非課金なので `--no-summarize`（Claude 生成経路）でも実行し、キャッシュを残す。
+        ログにはファイル名と理由だけを出す（本文は出さない。BR-NAME-04 と同じ扱い）。
         """
+        if not enabled:
+            return None
+        result = self._extract_materials(paths)
+        for warning in result.warnings:
+            logger.warning("付帯資料: %s", warning)
+        for name, reason in result.excluded:
+            logger.warning("付帯資料を除外しました: %s（%s）", name, reason)
+        return result
+
+    def _extract_materials(self, paths: "_Paths") -> materials_mod.MaterialsResult:
+        """キャッシュを見て必要なら抽出し、結果を保存して返す。"""
         cache = materials_mod.load_cache(paths.materials_cache)
         if not materials_mod.needs_extraction(paths.materials_dir, cache):
             return cache if cache is not None else materials_mod.MaterialsResult()
@@ -481,7 +504,9 @@ class PostMeetingPipeline:
             return {target_stage}
         return set()
 
-    def _with_naming_updates(self, forced: set[Stage], paths: "_Paths") -> set[Stage]:
+    def _with_naming_updates(
+        self, forced: set[Stage], paths: "_Paths", *, materials_enabled: bool = True
+    ) -> set[Stage]:
         """speaker_names.json が named より新しければ命名以降を再実行対象に加える。
 
         命名ゲートの運用は「speaker_names.json を記入・修正して再実行」（BR-NAME-01）。ところが
@@ -499,7 +524,11 @@ class PostMeetingPipeline:
             # 実行する経路（tools/meeting）を通す想定。
             logger.info("会議情報の更新を検知したため議事録を再生成します")
             forced = forced | {Stage.SUMMARIZED}
-        if paths.minutes.is_file() and (paths.materials_dir.is_dir() or paths.materials_cache.is_file()):
+        if (
+            materials_enabled
+            and paths.minutes.is_file()
+            and (paths.materials_dir.is_dir() or paths.materials_cache.is_file())
+        ):
             # ③付帯資料。materials/ の追加・差し替え・削除を検知したときのみ要約段を再実行する
             # （FR-MAT-06）。一度も付帯資料を使っていないセッションでは判定を行わない
             # （needs_extraction はキャッシュ・フォルダのいずれも無いと常に True を返すため、
@@ -527,6 +556,35 @@ class PostMeetingPipeline:
             "セッションIDは入力ファイル名（拡張子なし）由来のため、同名の別ファイルは前の会議の"
             "成果物を再利用してしまいます。入力ファイルを会議ごとに一意な名前へ変更して再実行するか、"
             "既存の出力ディレクトリを退避してください。",
+            failed_stage="input",
+        )
+
+    def _verify_same_media(self, rec: RecordingInput, paths: "_Paths") -> None:
+        """single モードの入力 WAV が前回と同じかを照合する（別会議の取り違え防止）。
+
+        single モードのセッション ID は WAV のファイル名（拡張子なし）由来のため、同名の別ファイル
+        （`meeting.wav` のような一般名）は同じ `<output_dir>/<session>/` を共有する。段の再利用は
+        それを「続きから」と解釈し、**前の会議の Transcribe 結果と議事録をそのまま成功として返す**
+        （今回の音声はどこにも文字起こしされない）。vtt モードの `_verify_same_input` と同じ穴で、
+        こちらは入力が WAV（統合前に判定したい）なので内容ハッシュを成果物として持つ。
+
+        paired は対象外である。セッション ID が Unit A の収録時刻（`yyyyMMdd-HHmmss`）で、
+        録音側も既存セッションディレクトリへの上書きを拒否するため衝突しない。
+        """
+        if rec.mode != InputMode.SINGLE:
+            return
+        digest = _file_digest(rec.others_wav_path)
+        if not paths.media_fingerprint.is_file():
+            paths.media_fingerprint.write_text(digest, encoding="utf-8")
+            return
+        recorded = paths.media_fingerprint.read_text(encoding="utf-8").strip()
+        if recorded == digest:
+            return
+        raise PipelineError(
+            f"セッション '{rec.session_id}' には別の音声の処理結果が既にあります: {paths.out_dir}\n"
+            "セッションIDは WAV のファイル名（拡張子なし）由来のため、同名の別ファイルは前の会議の"
+            "成果物（Transcribe 結果・議事録）を再利用してしまいます。入力を会議ごとに一意な名前へ"
+            "変更して再実行するか、既存の出力ディレクトリを退避してください。",
             failed_stage="input",
         )
 
@@ -569,6 +627,10 @@ class _Paths:
     @property
     def meeting_info(self) -> Path:
         return self.out_dir / "meeting_info.json"  # 人手記入・任意（FR-MI-01）
+
+    @property
+    def media_fingerprint(self) -> Path:
+        return self.out_dir / "input_media.sha256"  # single モードの入力照合（別会議の取り違え防止）
 
     @property
     def materials_dir(self) -> Path:
@@ -616,6 +678,22 @@ def _is_newer(source: Path, artifact: Path) -> bool:
     if not source.is_file() or not artifact.is_file():
         return False
     return source.stat().st_mtime > artifact.stat().st_mtime
+
+
+def _file_digest(path: Path, *, chunk_size: int = 1 << 20) -> str:
+    """ファイル内容の SHA-256（逐次読みでメモリを増やさない）。
+
+    WAV は数十 MB〜数百 MB になり得るため一括読みしない。読めない場合は入力段のエラーに倒す
+    （この時点で WAV は `input_resolver` が検証済みのため、通常は起きない）。
+    """
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as fh:
+            while chunk := fh.read(chunk_size):
+                digest.update(chunk)
+    except OSError as exc:
+        raise PipelineError(f"入力音声を読み込めません: {path}", failed_stage="input") from exc
+    return digest.hexdigest()
 
 
 def _source_digest(transcript: FinalTranscript) -> str:

@@ -459,3 +459,73 @@ def test_next_steps_minutes_done() -> None:
 @pytest.mark.unit
 def test_next_steps_recorded_is_empty() -> None:
     assert pipeline.next_steps_lines(Stage.RECORDED, _SESSION, False) == []
+
+
+@pytest.mark.unit
+def test_record_costs_recharges_correction_when_final_transcript_regenerated(
+    cfg: MeetingConfig, repo: Path
+) -> None:
+    """話者名の修正で C2 補正段が再実行されたら、その課金も台帳へ記録する（M-1）。
+
+    補正段は `has_entry`（存在チェック）だと2回目以降の実課金が「幻の非課金」になる。
+    """
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    write_pipeline_outputs(repo, _SESSION, correction_status="applied")
+    month = ledger.month_of(ledger.now_iso())
+
+    first = pipeline.record_costs(cfg, _SESSION, False, month)
+    assert first > 0
+    assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "correct") == 1
+
+    # 補正段の再実行（final_transcript.json の再生成）を模す。
+    final_path = cfg.session_out_dir(_SESSION) / "final_transcript.json"
+    future = final_path.stat().st_mtime + 10
+    os.utime(final_path, (future, future))
+
+    pipeline.record_costs(cfg, _SESSION, False, month)
+
+    assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "correct") == 2
+
+
+@pytest.mark.unit
+def test_record_costs_does_not_recharge_correction_on_reuse(cfg: MeetingConfig, repo: Path) -> None:
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    write_pipeline_outputs(repo, _SESSION, correction_status="applied")
+    month = ledger.month_of(ledger.now_iso())
+
+    pipeline.record_costs(cfg, _SESSION, False, month)
+    pipeline.record_costs(cfg, _SESSION, False, month)
+
+    assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "correct") == 1
+
+
+@pytest.mark.unit
+def test_llm_stage_records_artifact_mtime_for_subsecond_comparison(cfg: MeetingConfig, repo: Path) -> None:
+    """成果物 mtime を台帳へ残す（L-2: 秒精度比較による同一秒内の取りこぼしを避ける）。"""
+    write_pipeline_outputs(repo, "meeting-x", chars=500, raw=False)
+    month = ledger.month_of(ledger.now_iso())
+
+    pipeline.record_summary_cost(cfg, "meeting-x", False, month)
+
+    entry = next(e for e in ledger.load(cfg.ledger_path) if e.stage == "bedrock")
+    minutes_path = cfg.session_out_dir("meeting-x") / "minutes.md"
+    assert entry.units[ledger.ARTIFACT_MTIME_UNIT] == pytest.approx(minutes_path.stat().st_mtime)
+
+
+@pytest.mark.unit
+def test_claude_stage_does_not_recharge_on_local_regeneration(cfg: MeetingConfig, repo: Path) -> None:
+    """Claude 経路は final_transcript.json の再生成だけでは再計上しない（何も送っていない）。
+
+    計上点の final_transcript.json は命名・補正という**ローカル段**が書くファイルで、Claude へ
+    送った証拠ではない。mtime を根拠に再計上すると、話者名を直しただけで piiSent の行が増える。
+    """
+    write_pipeline_outputs(repo, "meeting-x", chars=500, raw=False, minutes=False)
+    month = ledger.month_of(ledger.now_iso())
+
+    pipeline.record_summary_cost(cfg, "meeting-x", True, month)
+    final_path = cfg.session_out_dir("meeting-x") / "final_transcript.json"
+    future = final_path.stat().st_mtime + 10
+    os.utime(final_path, (future, future))
+    pipeline.record_summary_cost(cfg, "meeting-x", True, month)
+
+    assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "claude") == 1

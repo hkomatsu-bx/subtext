@@ -546,3 +546,113 @@ class TestMaterials:
 
         assert result.status == ResultStatus.COMPLETED
         assert len(calls) == 1
+
+
+class TestMaterialsInClaudeRoute:
+    """③は `--no-summarize`（Claude 生成経路）でも抽出まで走る（M-2）。"""
+
+    def _complete_naming(self, tmp_path: Path, pipeline, rec) -> None:
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+
+    def test_no_summarize_still_extracts_materials_cache(self, tmp_path: Path, single_wav: Path) -> None:
+        """Claude は materials.extracted.json を読んで議事録を書くため、抽出は要約段に閉じない。"""
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("会議の前提資料", encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec, summarize=False))
+
+        assert result.status == ResultStatus.SUMMARIZE_SKIPPED
+        assert counter["calls"] == 0  # Bedrock 要約は踏まない
+        cache_path = tmp_path / "out" / rec.session_id / "materials.extracted.json"
+        assert cache_path.is_file()
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+        assert cache["materials"][0]["fileName"] == "agenda.txt"
+
+    def test_no_materials_option_skips_extraction_and_rerun_trigger(
+        self, tmp_path: Path, single_wav: Path
+    ) -> None:
+        """`--no-materials` は抽出もトリガーもしない（無視指定で再要約が走らない）。"""
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+        pipeline.run(PipelineOptions(input=rec, materials=False))  # complete（資料なし）
+        assert counter["calls"] == 1
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("追加された資料", encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec, materials=False))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert counter["calls"] == 1  # 再要約されない
+        assert not (tmp_path / "out" / rec.session_id / "materials.extracted.json").is_file()
+
+    def test_unextractable_material_does_not_retrigger_summarize(
+        self, tmp_path: Path, single_wav: Path
+    ) -> None:
+        """抽出不能な資料が残っていても、実行のたびに要約段が再実行されない（H-1 の回帰）。"""
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "shot.png").write_text("screenshot", encoding="utf-8")  # 未対応拡張子
+
+        pipeline.run(PipelineOptions(input=rec))  # complete
+        assert counter["calls"] == 1
+
+        for _ in range(3):
+            result = pipeline.run(PipelineOptions(input=rec))
+            assert result.status == ResultStatus.COMPLETED
+
+        assert counter["calls"] == 1  # Bedrock 再課金が起きない
+
+
+class TestSingleModeInputFingerprint:
+    """single モードは同名の別音声で前回成果物を再利用しない（M-7）。"""
+
+    def test_same_audio_reuses_artifacts(self, tmp_path: Path, single_wav: Path) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, transcribe = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert transcribe.calls == 1  # 同じ入力なので再課金しない
+
+    def test_different_audio_with_same_name_is_refused(
+        self, tmp_path: Path, single_wav: Path, make_wav
+    ) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))  # naming 停止（指紋を記録）
+
+        # 同名・別内容の WAV に差し替える（別会議の `meeting.wav` を上書きコピーした状況）。
+        replacement = make_wav("replacement.wav", frames=3200)
+        single_wav.write_bytes(replacement.read_bytes())
+
+        with pytest.raises(PipelineError, match="別の音声の処理結果"):
+            pipeline.run(PipelineOptions(input=resolve_single(single_wav, "ja-JP")))

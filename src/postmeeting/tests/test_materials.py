@@ -319,3 +319,80 @@ def test_needs_extraction_true_when_dir_removed_but_cache_had_materials(tmp_path
     a.unlink()
     materials_dir.rmdir()
     assert materials.needs_extraction(materials_dir, cache) is True
+
+
+# --- 差分検知の母集団（H-1: 抽出不能ファイルによる再課金ループの防止） ---------
+
+
+def test_needs_extraction_false_when_only_unextractable_files_remain(tmp_path: Path) -> None:
+    """抽出できなかったファイルが残っていても再抽出しない。
+
+    採用分だけをキャッシュに載せると、スキャン PDF や未対応拡張子が materials/ に居座る間ずっと
+    「未知のファイルがある」と判定され、要約段の再実行＝Bedrock 再課金が実行のたびに起きる。
+    """
+    materials_dir = tmp_path / "materials"
+    materials_dir.mkdir()
+    _write_blank_pdf(materials_dir / "scanned.pdf")  # テキスト層が空＝抽出不能
+    _write(materials_dir / "note.png", "unsupported")  # 未対応拡張子
+
+    cache = materials.collect(
+        tuple(sorted(materials_dir.iterdir())), max_total_chars=1000
+    )
+
+    assert cache.included == ()
+    assert len(cache.warnings) == 2  # どちらも警告に落ちる
+    assert materials.needs_extraction(materials_dir, cache) is False
+
+
+def test_needs_extraction_true_when_unextractable_file_is_replaced(tmp_path: Path) -> None:
+    """抽出不能だったファイルが差し替わったら再抽出する（内容ハッシュで検知）。"""
+    materials_dir = tmp_path / "materials"
+    materials_dir.mkdir()
+    path = _write(materials_dir / "note.png", "unsupported")
+    cache = materials.collect((path,), max_total_chars=1000)
+    assert materials.needs_extraction(materials_dir, cache) is False
+
+    _write(path, "差し替え後")
+
+    assert materials.needs_extraction(materials_dir, cache) is True
+
+
+def test_needs_extraction_false_when_only_excluded_by_limit(tmp_path: Path) -> None:
+    """文字数上限で除外したファイルも母集団に含める（再抽出ループを起こさない）。"""
+    materials_dir = tmp_path / "materials"
+    materials_dir.mkdir()
+    _write(materials_dir / "big.txt", "あ" * 100)
+
+    cache = materials.collect(tuple(sorted(materials_dir.iterdir())), max_total_chars=10)
+
+    assert cache.included == ()
+    assert len(cache.excluded) == 1
+    assert materials.needs_extraction(materials_dir, cache) is False
+
+
+def test_fingerprints_cover_every_examined_file(tmp_path: Path) -> None:
+    good = _write(tmp_path / "a.txt", "本文")
+    unsupported = _write(tmp_path / "b.png", "x")
+    result = materials.collect((good, unsupported), max_total_chars=1000)
+
+    assert {name for name, _ in result.fingerprints} == {"a.txt", "b.png"}
+    assert all(digest for _name, digest in result.fingerprints)  # どちらもハッシュを持つ
+
+
+def test_from_json_without_fingerprints_falls_back_to_material_hashes(tmp_path: Path) -> None:
+    """`fingerprints` を持たない旧形式キャッシュでも、採用分は再抽出しない（橋渡し）。"""
+    materials_dir = tmp_path / "materials"
+    materials_dir.mkdir()
+    path = _write(materials_dir / "a.txt", "本文")
+    current = materials.collect((path,), max_total_chars=1000)
+    legacy = {k: v for k, v in current.to_json().items() if k != "fingerprints"}
+
+    restored = materials.MaterialsResult.from_json(legacy)
+
+    assert materials.needs_extraction(materials_dir, restored) is False
+
+
+def test_extract_one_accepts_precomputed_digest(tmp_path: Path) -> None:
+    path = _write(tmp_path / "a.txt", "本文")
+    result = materials.extract_one(path, content_digest="deadbeef")
+    assert result.content_hash == "deadbeef"

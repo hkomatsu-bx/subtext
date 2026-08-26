@@ -155,3 +155,46 @@ def test_default_launcher_invokes_subprocess(tmp_path: Path, monkeypatch: pytest
     launcher(path)
 
     assert calls == [["notepad", str(path)]]
+
+
+# --- $EDITOR の分解（M-4: 引数付きコマンドで壊れないこと） ---------------------
+
+
+def test_split_editor_command_plain_name() -> None:
+    assert edit.split_editor_command("notepad") == ["notepad"]
+
+
+def test_split_editor_command_keeps_arguments() -> None:
+    """`EDITOR="code --wait"` を実行ファイル名として渡すと FileNotFoundError になる。"""
+    assert edit.split_editor_command("code --wait") == ["code", "--wait"]
+
+
+def test_split_editor_command_windows_path_is_not_unescaped() -> None:
+    """Windows のパスのバックスラッシュをエスケープとして食べない（posix=False）。"""
+    assert edit.split_editor_command(r"C:\Tools\np.exe") == [r"C:\Tools\np.exe"]
+
+
+def test_split_editor_command_quoted_path_with_spaces() -> None:
+    assert edit.split_editor_command(r'"C:\Program Files\Editor\ed.exe" --wait') == [
+        r"C:\Program Files\Editor\ed.exe",
+        "--wait",
+    ]
+
+
+def test_default_launcher_passes_editor_arguments(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, check):
+        calls.append(cmd)
+
+        class _Result:
+            returncode = 0
+
+        return _Result()
+
+    monkeypatch.setattr("meeting.edit.subprocess.run", fake_run)
+    path = tmp_path / "minutes.md"
+
+    edit.default_launcher("code --wait")(path)
+
+    assert calls == [["code", "--wait", str(path)]]

@@ -686,7 +686,10 @@ class MeetingApp(App[None]):
 
         session_id = session.session_id
         parent = slack.build_parent(session_id, minutes_md)
-        body = slack.to_mrkdwn(minutes_md)
+        # `post_minutes` と同じ入力（決定事項・ToDo を除いた本文）でプレビューする。minutes_md を
+        # そのまま渡すと、実際の投稿内容（重複除去済み・注記付き）とプレビューがずれ、承認した
+        # ものと送るものが違う状態になる（CLI の `_confirm_and_post` と同じ理由）。
+        body = slack.to_mrkdwn(slack.build_thread_body(minutes_md))
         preview = f"[親メッセージ（要約）]\n{parent}\n\n[スレッド全文]\n{body}"
 
         def on_result(channel: str | None) -> None:
@@ -854,14 +857,18 @@ class MeetingApp(App[None]):
         return self._busy_worker_reason()
 
     def _busy_worker_reason(self) -> str | None:
-        """課金・外部公開を伴うワーカーが進行中ならその理由を返す（録音は含まない）。
+        """止められないワーカーが進行中ならその理由を返す（録音は含まない）。
 
-        録音は `on_unmount` が stop-file で安全に停止できるが、議事録・取込・Slack 投稿は
-        thread ワーカーで動く子プロセス/HTTP のため `cancel_all` では止まらない。
+        録音は `on_unmount` が stop-file で安全に停止できるが、議事録・取込・Slack 投稿・議事録編集は
+        thread ワーカーで動く子プロセス/HTTP/外部エディタのため `cancel_all` では止まらない。
+        議事録編集を含めるのは、外部エディタを開いたまま終了すると join 待ちで TUI が無反応になり、
+        削除を許すと編集中のファイルを足元から消すことになるためである。
         """
         for group in (MINUTES_WORKER_GROUP, VTT_WORKER_GROUP, MP4_WORKER_GROUP, _SLACK_WORKER_GROUP):
             if self.worker_active(group):
                 return "議事録生成・取込・Slack 投稿のいずれかを実行中です（完了を待ってください）。"
+        if self.worker_active(_EDIT_WORKER_GROUP):
+            return "議事録を編集中です（エディタを閉じてから実行してください）。"
         return None
 
     async def action_quit(self) -> None:

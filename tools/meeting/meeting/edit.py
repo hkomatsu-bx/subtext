@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Callable
@@ -33,11 +34,25 @@ def resolve_editor() -> str:
     return os.environ.get("EDITOR", "").strip() or "notepad"
 
 
+def split_editor_command(editor: str) -> list[str]:
+    """`$EDITOR` を実行ファイルと引数へ分解する（純粋）。
+
+    `EDITOR="code --wait"` のように引数付きの指定が一般的で、文字列をそのまま実行ファイル名として
+    渡すと「`code --wait` という名前の実行ファイル」を探して FileNotFoundError になる。
+    `posix=False` にするのは Windows のパス（`C:\\Program Files\\...`）のバックスラッシュを
+    エスケープとして食べさせないためで、引用符で囲んだパスもそのまま扱える。
+    """
+    parts = shlex.split(editor, posix=False)
+    # posix=False は引用符を残すため、実行ファイル名として使う前に落とす。
+    return [part.strip('"') for part in parts if part]
+
+
 def default_launcher(editor: str) -> Launcher:
     """既定のランチャ。エディタが閉じるまで待つ（`subprocess.run` はブロッキング）。"""
+    command = split_editor_command(editor)
 
     def _launch(path: Path) -> None:
-        subprocess.run([editor, str(path)], check=False)
+        subprocess.run([*command, str(path)], check=False)
 
     return _launch
 
