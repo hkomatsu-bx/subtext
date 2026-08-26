@@ -20,9 +20,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from meeting import naming, pipeline, runner
+from meeting import meeting_info, naming, pipeline, runner
 from meeting.runner import SessionSummary, Stage
-from meeting.tui_modals import SpeakerNamesModal
+from meeting.tui_modals import MeetingInfoModal, SpeakerNamesModal
 from meeting.tui_view import Activity
 
 if TYPE_CHECKING:  # 実行時 import は循環参照になるため型検査時のみ。
@@ -163,7 +163,7 @@ class MinutesFlow:
             return
         prompts = naming.pending_prompts(data)
         if not prompts:
-            self.launch(route, claude=claude)
+            self.open_meeting_info_modal(route, claude=claude)
             return
 
         def on_result(names: dict[str, str] | None) -> None:
@@ -180,10 +180,36 @@ class MinutesFlow:
                 self._app.log_line(f"話者名を {count} 件記入しました（実名はログに出しません）。")
             else:
                 self._app.log_line("話者名の記入はありません（spk_n のラベルのまま続行します）。")
-            self.launch(route, claude=claude)
+            self.open_meeting_info_modal(route, claude=claude)
 
         self._app.push_screen(
             SpeakerNamesModal(f"話者名の記入: {route.session_id}", prompts),
+            callback=on_result,
+        )
+
+    def open_meeting_info_modal(self, route: MinutesRoute, *, claude: bool) -> None:
+        """会議名・日時・参加者の記入モーダルを開く（FR-MI-01）。既存ファイルがあれば訊かない。"""
+        path = meeting_info.path_for(self._app.cfg.session_out_dir(route.session_id))
+        if path.is_file():
+            self.launch(route, claude=claude)
+            return
+
+        def on_result(fields: dict[str, str] | None) -> None:
+            if fields is not None:
+                data = meeting_info.build(
+                    fields.get("title", ""), fields.get("datetime", ""), fields.get("participants", "")
+                )
+                try:
+                    meeting_info.save(path, data)
+                except ValueError as exc:
+                    self._app.log_line(f"エラー: {exc}")
+                    return
+                if not meeting_info.is_empty(data):
+                    self._app.log_line("会議情報を保存しました（実名等はログに出しません）。")
+            self.launch(route, claude=claude)
+
+        self._app.push_screen(
+            MeetingInfoModal(f"会議情報の記入: {route.session_id}"),
             callback=on_result,
         )
 

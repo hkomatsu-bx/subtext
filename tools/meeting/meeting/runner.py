@@ -225,12 +225,32 @@ def estimate_transcribe(cfg: MeetingConfig, session: str) -> Estimate:
     return cfg.pricing.estimate_transcribe(manifest.self_sec, manifest.others_sec)
 
 
+def materials_char_count(cfg: MeetingConfig, session: str) -> int:
+    """`materials.extracted.json` に含まれる付帯資料（採用分のみ）の総文字数（③付帯資料）。
+
+    未存在・壊れている場合は 0（見積・実測いずれも「資料なし」として扱う。資料の有無は
+    Unit B 側の任意機能であり、無いことをハーネス側でエラーにしない）。
+    """
+    path = cfg.session_out_dir(session) / "materials.extracted.json"
+    if not path.is_file():
+        return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    return sum(int(m.get("charCount", 0)) for m in data.get("materials", []))
+
+
 def estimate_summary(cfg: MeetingConfig, session: str, *, claude: bool) -> Estimate | None:
-    """final_transcript.json があれば要約段の概算を返す。無ければ None（録音直後など）。"""
+    """final_transcript.json があれば要約段の概算を返す。無ければ None（録音直後など）。
+
+    付帯資料（③）の文字数が要約プロンプトの入力に加わる分も見積に含める（漏らすと台帳・
+    閾値判定が実際の入力トークン量を過小評価する）。
+    """
     out = cfg.session_out_dir(session) / "final_transcript.json"
     if not out.is_file():
         return None
-    chars = transcript_char_count(cfg, session)
+    chars = transcript_char_count(cfg, session) + materials_char_count(cfg, session)
     return cfg.pricing.estimate_claude(chars) if claude else cfg.pricing.estimate_bedrock(chars)
 
 

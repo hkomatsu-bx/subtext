@@ -57,7 +57,7 @@ class FakeTranscribe:
         return output_key
 
 
-def _fake_summarizer(transcript: FinalTranscript, config: PipelineConfig) -> MinutesDoc:
+def _fake_summarizer(transcript: FinalTranscript, config: PipelineConfig, **_kwargs: object) -> MinutesDoc:
     return MinutesDoc(
         session_id=transcript.session_id,
         markdown="## 決定事項\n- なし\n## ToDo\n## 論点・議論サマリ",

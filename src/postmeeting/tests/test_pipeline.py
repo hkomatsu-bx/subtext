@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 
 from subtext_postmeeting.config import PipelineConfig
+from subtext_postmeeting.errors import PipelineError
 from subtext_postmeeting.input_resolver import resolve_paired, resolve_single
 from subtext_postmeeting.models import FinalTranscript, MinutesDoc, Stage, StreamRole
 from subtext_postmeeting.pipeline import PipelineOptions, PostMeetingPipeline, ResultStatus
@@ -60,7 +61,7 @@ class FakeTranscribe:
 
 
 def _fake_summarizer_factory(counter: dict[str, int]):
-    def _summarize(transcript: FinalTranscript, config: PipelineConfig) -> MinutesDoc:
+    def _summarize(transcript: FinalTranscript, config: PipelineConfig, **_kwargs: object) -> MinutesDoc:
         counter["calls"] += 1
         return MinutesDoc(
             session_id=transcript.session_id,
@@ -302,3 +303,246 @@ class TestPairedEndToEnd:
         # self 側の本文（conftest の self フィクスチャ由来）が残っていること＝取り違えていない。
         self_texts = " ".join(s["text"] for s in final["segments"] if s["origin"] == StreamRole.SELF.value)
         assert "そうです" in self_texts
+
+
+class TestMeetingInfoUpdateTriggersResummarize:
+    """meeting_info.json の更新は要約段のみを再実行対象にする（BR-MI-01）。"""
+
+    def test_meeting_info_newer_than_minutes_reruns_summarize_only(self, tmp_path: Path, single_wav: Path) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, transcribe = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))  # naming 停止
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+        pipeline.run(PipelineOptions(input=rec))  # complete（1回目の summarize）
+        assert counter["calls"] == 1
+
+        meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
+        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert counter["calls"] == 2  # summarize のみ再実行
+        assert transcribe.calls == 1  # Transcribe は再課金されない
+
+    def test_meeting_info_older_than_minutes_does_not_rerun(self, tmp_path: Path, single_wav: Path) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+        meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
+        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+        pipeline.run(PipelineOptions(input=rec))  # meeting_info は minutes より先に存在
+        assert counter["calls"] == 1
+
+        pipeline.run(PipelineOptions(input=rec))  # 再実行しても再要約しない（再利用）
+
+        assert counter["calls"] == 1
+
+
+class TestMinutesEditGuard:
+    """手編集済み議事録（minutes.meta.json の edited=true）は明示 --force 抜きに上書きしない（②）。"""
+
+    def _complete_once(self, tmp_path: Path, counter: dict[str, int]):
+        pipeline, s3, transcribe = _build(tmp_path, counter)
+        rec = resolve_single(tmp_path / "meeting.wav", "ja-JP")
+        return pipeline, s3, transcribe, rec
+
+    def test_meeting_info_update_after_edit_stops_instead_of_overwriting(
+        self, tmp_path: Path, single_wav: Path
+    ) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+        pipeline.run(PipelineOptions(input=rec))  # complete
+        assert counter["calls"] == 1
+
+        meta = tmp_path / "out" / rec.session_id / "minutes.meta.json"
+        meta.write_text(json.dumps({"edited": True}), encoding="utf-8")
+        meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
+        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+
+        with pytest.raises(PipelineError, match="手編集済み"):
+            pipeline.run(PipelineOptions(input=rec))
+
+        assert counter["calls"] == 1  # 上書きは実行されない
+
+    def test_explicit_force_overrides_edited_guard(self, tmp_path: Path, single_wav: Path) -> None:
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+        pipeline.run(PipelineOptions(input=rec))
+        assert counter["calls"] == 1
+
+        meta = tmp_path / "out" / rec.session_id / "minutes.meta.json"
+        meta.write_text(json.dumps({"edited": True}), encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec, target_stage=Stage.SUMMARIZED))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert counter["calls"] == 2  # 明示指定なら上書きされる
+
+    def test_unedited_minutes_are_overwritten_without_force(self, tmp_path: Path, single_wav: Path) -> None:
+        """`edited` が立っていなければ、従来どおり自動トリガーで上書きできる（回帰）。"""
+        counter = {"calls": 0}
+        pipeline, _s3, _tr = _build(tmp_path, counter)
+        rec = resolve_single(single_wav, "ja-JP")
+        pipeline.run(PipelineOptions(input=rec))
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+        pipeline.run(PipelineOptions(input=rec))
+        assert counter["calls"] == 1
+
+        meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
+        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert counter["calls"] == 2
+
+
+class TestMaterials:
+    """③付帯資料。materials/ の抽出結果を要約プロンプトへ渡す経路と再課金トリガーを検証する。"""
+
+    def _build_capturing(self, tmp_path: Path):
+        """summarize 呼び出しの kwargs を記録するフェイク（materials_text の伝播を確認するため）。"""
+        calls: list[dict] = []
+        s3 = FakeS3Io(others_transcribe_json())
+        transcribe = FakeTranscribe()
+
+        def _summarize(transcript: FinalTranscript, config: PipelineConfig, **kwargs: object) -> MinutesDoc:
+            calls.append(kwargs)
+            return MinutesDoc(
+                session_id=transcript.session_id,
+                markdown="## 決定事項\n- なし\n## ToDo\n## 論点・議論サマリ",
+                source_model="fake-model",
+                generated_at_utc=datetime(2026, 6, 20, tzinfo=timezone.utc),
+            )
+
+        pipeline = PostMeetingPipeline(
+            _config(tmp_path / "out"),
+            s3io=s3,
+            transcribe_client=transcribe,
+            summarizer=_summarize,
+            credential_checker=lambda: None,
+        )
+        return pipeline, calls
+
+    def _complete_naming(self, tmp_path: Path, pipeline, rec) -> None:
+        pipeline.run(PipelineOptions(input=rec))  # naming 停止
+        naming = tmp_path / "out" / rec.session_id / "speaker_names.json"
+        naming.write_text(
+            json.dumps({"sessionId": rec.session_id, "mappings": {"spk_0": "田中", "spk_1": "佐藤"}}),
+            encoding="utf-8",
+        )
+
+    def test_materials_text_is_passed_to_summarizer(self, tmp_path: Path, single_wav: Path) -> None:
+        pipeline, calls = self._build_capturing(tmp_path)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("会議の前提事項", encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert len(calls) == 1
+        assert "会議の前提事項" in calls[0]["materials_text"]
+        assert "agenda.txt" in calls[0]["materials_text"]
+        cache = json.loads((tmp_path / "out" / rec.session_id / "materials.extracted.json").read_text(encoding="utf-8"))
+        assert cache["materials"][0]["fileName"] == "agenda.txt"
+
+    def test_no_materials_option_omits_reference_block(self, tmp_path: Path, single_wav: Path) -> None:
+        pipeline, calls = self._build_capturing(tmp_path)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("会議の前提事項", encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec, materials=False))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert calls[0]["materials_text"] == ""
+        # --no-materials では抽出そのものを行わない（キャッシュも作らない）。
+        assert not (tmp_path / "out" / rec.session_id / "materials.extracted.json").is_file()
+
+    def test_adding_materials_after_minutes_done_triggers_resummarize_only(
+        self, tmp_path: Path, single_wav: Path
+    ) -> None:
+        pipeline, calls = self._build_capturing(tmp_path)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+        pipeline.run(PipelineOptions(input=rec))  # complete（資料なし）
+        assert len(calls) == 1
+        assert calls[0]["materials_text"] == ""
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("追加された資料", encoding="utf-8")
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert len(calls) == 2  # summarize のみ再実行
+        assert "追加された資料" in calls[1]["materials_text"]
+
+    def test_unchanged_materials_does_not_retrigger_summarize(self, tmp_path: Path, single_wav: Path) -> None:
+        pipeline, calls = self._build_capturing(tmp_path)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        materials_dir = tmp_path / "out" / rec.session_id / "materials"
+        materials_dir.mkdir(parents=True)
+        (materials_dir / "agenda.txt").write_text("資料本文", encoding="utf-8")
+
+        pipeline.run(PipelineOptions(input=rec))  # complete
+        assert len(calls) == 1
+
+        result = pipeline.run(PipelineOptions(input=rec))  # 資料は変わっていない
+
+        assert result.status == ResultStatus.COMPLETED
+        assert len(calls) == 1  # 再要約されない（再利用）
+
+    def test_session_without_materials_dir_is_unaffected(self, tmp_path: Path, single_wav: Path) -> None:
+        """付帯資料を一度も使っていないセッションは、materials 判定で無駄な再要約を起こさない。"""
+        pipeline, calls = self._build_capturing(tmp_path)
+        rec = resolve_single(single_wav, "ja-JP")
+        self._complete_naming(tmp_path, pipeline, rec)
+
+        pipeline.run(PipelineOptions(input=rec))
+        assert len(calls) == 1
+
+        result = pipeline.run(PipelineOptions(input=rec))
+
+        assert result.status == ResultStatus.COMPLETED
+        assert len(calls) == 1

@@ -23,6 +23,9 @@ _DEFAULTS = {
     "POLL_TIMEOUT_SEC": "1800",
     "KEEP_S3": "false",
     "OUTPUT_DIR": "out",
+    # ③付帯資料。抽出テキストの総文字数上限（要約プロンプトへ入れる資料の合計）。超過分は
+    # ファイル単位で末尾から除外する（FR-MAT-04）。
+    "MATERIALS_MAX_TOTAL_CHARS": "40000",
     # CORRECTION_TERMS_PATH は CWD 非依存にしたいため _DEFAULTS には置かず、
     # 未設定時はリポジトリ同梱位置を _default_terms_path() で解決する（C2・FR-C2-06）。
 }
@@ -46,6 +49,7 @@ class PipelineConfig:
     # 使う AWS プロファイル名。空＝未指定（SDK 既定＝default）。既定値を `default` にしては
     # ならない理由は aws.apply_profile の docstring を参照。
     aws_profile: str = ""
+    materials_max_total_chars: int = 40_000  # ③付帯資料。FR-MAT-04
 
     @staticmethod
     def from_env(env_file: Path | None = None, *, require_s3: bool = True) -> "PipelineConfig":
@@ -90,6 +94,9 @@ class PipelineConfig:
             ),
             # 環境変数 → .env の順（_load_env の規則）。未設定は空のまま（既定へ倒さない）。
             aws_profile=get("AWS_PROFILE").strip(),
+            materials_max_total_chars=_parse_int(
+                get("MATERIALS_MAX_TOTAL_CHARS"), "MATERIALS_MAX_TOTAL_CHARS"
+            ),
         )
 
     def require_bedrock_model(self) -> str:

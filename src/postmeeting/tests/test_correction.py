@@ -433,7 +433,7 @@ class TestPipelineWiring:
         _prefill_naming(tmp_path, "s")
         seen: list[str] = []
 
-        def fake_summarizer(transcript: FinalTranscript, config: PipelineConfig):
+        def fake_summarizer(transcript: FinalTranscript, config: PipelineConfig, **_kwargs: object):
             seen.append(transcript.segments[0].text)
             from subtext_postmeeting.models import MinutesDoc
             from datetime import datetime, timezone

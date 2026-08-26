@@ -22,7 +22,7 @@ import pytest
 
 from textual.content import Content
 from textual.pilot import Pilot
-from textual.widgets import Button, DataTable, Input, Log, Static
+from textual.widgets import Button, DataTable, Input, Log, Static, TextArea
 
 from meeting import ledger
 from meeting.config import MeetingConfig
@@ -1215,6 +1215,8 @@ def test_minutes_button_completes_wav_route_through_naming_modal(cfg: MeetingCon
             # 命名ゲート到達で記入モーダルが自動的に開いていること。
             app.screen.query_one("#speaker-0", Input).value = "小松"
             await pilot.click("#ok")
+            await pilot.pause()
+            await pilot.click("#ok")  # 続く会議情報モーダルは空欄のまま続行
             await app.workers.wait_for_complete()
             await pilot.pause()
             return "\n".join(app.query_one("#log", Log).lines)
@@ -1245,6 +1247,8 @@ def test_speaker_names_modal_does_not_leak_pii_to_log(cfg: MeetingConfig, repo: 
             await pilot.pause()
             app.screen.query_one("#speaker-0", Input).value = "小松"
             await pilot.click("#ok")
+            await pilot.pause()
+            await pilot.click("#ok")  # 続く会議情報モーダルも空欄のまま続行
             await app.workers.wait_for_complete()
             await pilot.pause()
             return "\n".join(app.query_one("#log", Log).lines)
@@ -1280,6 +1284,94 @@ def test_speaker_names_modal_cancel_does_not_run_pipeline(cfg: MeetingConfig, re
 
 
 @pytest.mark.integration
+def test_meeting_info_modal_saves_filled_fields_and_launches_pipeline(cfg: MeetingConfig, repo: Path) -> None:
+    """話者名ゲート後の会議情報モーダルで記入すると meeting_info.json に保存され、続けて生成される。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    _write_naming_template(repo)
+    run, calls = _staged_runner([lambda cmd, kwargs: _write_transcript_and_minutes(repo)])
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#minutes-bedrock")
+            await pilot.pause()
+            await pilot.click("#ok")  # 話者名は空欄のまま続行
+            await pilot.pause()
+            app.screen.query_one("#mi-title", Input).value = "定例会"
+            app.screen.query_one("#mi-participants", Input).value = "田中、山田（A社）"
+            await pilot.click("#ok")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return "\n".join(app.query_one("#log", Log).lines)
+
+    text = _run_async(scenario())
+
+    assert len(calls) == 1
+    info = json.loads((cfg.session_out_dir(_SESSION) / "meeting_info.json").read_text(encoding="utf-8"))
+    assert info["title"] == "定例会"
+    assert info["participants"] == ["田中", "山田（A社）"]
+    assert "会議情報を保存しました" in text
+    assert "田中" not in text  # 参加者名はログに出さない（BR-NAME-04 と同じ扱い）。
+
+
+@pytest.mark.integration
+def test_meeting_info_modal_skip_does_not_write_file(cfg: MeetingConfig, repo: Path) -> None:
+    """会議情報モーダルを Esc でスキップしても、記入なしのままパイプラインは続行する。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    _write_naming_template(repo)
+    run, calls = _staged_runner([lambda cmd, kwargs: _write_transcript_and_minutes(repo)])
+
+    async def scenario() -> None:
+        app = MeetingApp(cfg, run=run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#minutes-bedrock")
+            await pilot.pause()
+            await pilot.click("#ok")  # 話者名は空欄のまま続行
+            await pilot.pause()
+            await pilot.click("#cancel")  # 会議情報はスキップ
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+    _run_async(scenario())
+
+    assert len(calls) == 1  # スキップしてもパイプラインは続行する。
+    assert not (cfg.session_out_dir(_SESSION) / "meeting_info.json").is_file()
+
+
+@pytest.mark.integration
+def test_meeting_info_modal_not_reopened_when_file_already_exists(cfg: MeetingConfig, repo: Path) -> None:
+    """meeting_info.json が既にあれば2回目以降は訊かない（毎回訊かれる煩わしさを避ける）。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    _write_naming_template(repo)
+    (cfg.session_out_dir(_SESSION)).mkdir(parents=True, exist_ok=True)
+    (cfg.session_out_dir(_SESSION) / "meeting_info.json").write_text(
+        json.dumps({"title": "既存の会議名", "datetime": "", "participants": []}), encoding="utf-8"
+    )
+    run, calls = _staged_runner([lambda cmd, kwargs: _write_transcript_and_minutes(repo)])
+
+    async def scenario() -> bool:
+        app = MeetingApp(cfg, run=run)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#minutes-bedrock")
+            await pilot.pause()
+            await pilot.click("#ok")  # 話者名は空欄のまま続行
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return bool(app.screen.query("#mi-title"))
+
+    modal_open = _run_async(scenario())
+
+    assert modal_open is False
+    assert len(calls) == 1
+
+
+@pytest.mark.integration
 def test_speaker_names_modal_blank_input_continues_with_labels(cfg: MeetingConfig, repo: Path) -> None:
     """空欄のまま続行すると spk_n のラベルで進む（記入は任意）。"""
     write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
@@ -1294,6 +1386,8 @@ def test_speaker_names_modal_blank_input_continues_with_labels(cfg: MeetingConfi
             await pilot.click("#minutes-bedrock")
             await pilot.pause()
             await pilot.click("#ok")  # 何も入力せず続行
+            await pilot.pause()
+            await pilot.click("#ok")  # 続く会議情報モーダルも空欄のまま続行
             await app.workers.wait_for_complete()
             await pilot.pause()
             return "\n".join(app.query_one("#log", Log).lines)
@@ -1320,6 +1414,8 @@ def test_auto_resume_stops_at_limit_when_pipeline_makes_no_progress(cfg: Meeting
             await pilot.pause()
             app.screen.query_one("#speaker-0", Input).value = "小松"
             await pilot.click("#ok")
+            await pilot.pause()
+            await pilot.click("#ok")  # 続く会議情報モーダルは空欄のまま続行
             await app.workers.wait_for_complete()
             await pilot.pause()
             modal_open = bool(app.screen.query("#speaker-0"))
@@ -1357,6 +1453,8 @@ def test_import_vtt_resumes_through_naming_modal_with_vtt_mode(cfg: MeetingConfi
             await pilot.pause()
             app.screen.query_one("#speaker-0", Input).value = "小松"
             await pilot.click("#ok")
+            await pilot.pause()
+            await pilot.click("#ok")  # 続く会議情報モーダルは空欄のまま続行
             await app.workers.wait_for_complete()
             await pilot.pause()
             return "\n".join(app.query_one("#log", Log).lines)
@@ -2275,3 +2373,103 @@ def test_a_key_rechecks_credentials(cfg: MeetingConfig) -> None:
     assert "✗" in before
     assert after == "AWS default/ap-northeast-1 ✓"
     assert len(calls) == 2
+
+
+@pytest.mark.integration
+def test_edit_minutes_button_opens_editor_and_logs_missing_headings(
+    cfg: MeetingConfig, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """議事録編集ボタンはエディタ相当（seam）を起動し、保存後に見出し欠落を警告する（②）。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    write_pipeline_outputs(repo, _SESSION)
+
+    def fake_launch(path: Path) -> None:
+        path.write_text("本文だけになった\n", encoding="utf-8")
+
+    monkeypatch.setattr("meeting.tui.edit_mod.default_launcher", lambda editor: fake_launch)
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=lambda *a, **k: None)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#edit-minutes")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return "\n".join(app.query_one("#log", Log).lines)
+
+    text = _run_async(scenario())
+
+    assert "議事録を保存しました" in text
+    assert "決定事項" in text and "ToDo" in text
+    minutes_path = cfg.session_out_dir(_SESSION) / "minutes.md"
+    assert minutes_path.read_text(encoding="utf-8") == "本文だけになった\n"
+
+
+@pytest.mark.integration
+def test_edit_minutes_rejected_when_no_minutes_yet(cfg: MeetingConfig, repo: Path) -> None:
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    _write_naming_template(repo)  # minutes.md は無い
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=lambda *a, **k: None)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#edit-minutes")
+            await pilot.pause()
+            return "\n".join(app.query_one("#log", Log).lines)
+
+    text = _run_async(scenario())
+
+    assert "まだ議事録がありません" in text
+
+
+@pytest.mark.integration
+def test_import_materials_copies_resolved_files_into_materials_dir(cfg: MeetingConfig, repo: Path, tmp_path: Path) -> None:
+    """資料投入モーダルで入力したパスが materials/ へコピーされること（③付帯資料）。"""
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    src = tmp_path / "agenda.txt"
+    src.write_text("会議の前提資料", encoding="utf-8")
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=lambda *a, **k: None)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#import-materials")
+            await pilot.pause()
+            app.screen.query_one("#materials-input", TextArea).text = str(src)
+            await pilot.click("#ok")
+            await pilot.pause()
+            return "\n".join(app.query_one("#log", Log).lines)
+
+    text = _run_async(scenario())
+
+    assert "1 件を投入しました" in text
+    materials_dir = cfg.session_out_dir(_SESSION) / "materials"
+    assert (materials_dir / "agenda.txt").read_text(encoding="utf-8") == "会議の前提資料"
+
+
+@pytest.mark.integration
+def test_import_materials_cancel_does_not_copy(cfg: MeetingConfig, repo: Path, tmp_path: Path) -> None:
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    src = tmp_path / "agenda.txt"
+    src.write_text("本文", encoding="utf-8")
+
+    async def scenario() -> str:
+        app = MeetingApp(cfg, run=lambda *a, **k: None)
+        async with app.run_test(size=(140, 40)) as pilot:
+            await pilot.pause()
+            app._selected = _SESSION
+            await pilot.click("#import-materials")
+            await pilot.pause()
+            app.screen.query_one("#materials-input", TextArea).text = str(src)
+            await pilot.click("#cancel")
+            await pilot.pause()
+            return "\n".join(app.query_one("#log", Log).lines)
+
+    text = _run_async(scenario())
+
+    assert "中止しました" in text
+    assert not (cfg.session_out_dir(_SESSION) / "materials").is_dir()

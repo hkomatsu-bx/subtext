@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from meeting.ledger import (
     append,
     cumulative_after,
     evaluate,
+    latest_entry_epoch,
     load,
     month_of,
     monthly_total,
@@ -163,3 +165,38 @@ def test_evaluate_boundary_not_exceeded() -> None:
     # ちょうど上限は超過扱いにしない（> 判定）。
     th = Thresholds(per_run_usd=5.0, monthly_usd=50.0)
     assert evaluate(5.0, 50.0, th) == []
+
+
+@pytest.mark.unit
+def test_latest_entry_epoch_none_when_no_matching_entry() -> None:
+    entries = [_entry("2026-06-20T10:00:00+00:00", 1.0, stage="transcribe")]
+    assert latest_entry_epoch(entries, "20260625-120156", "bedrock") is None
+
+
+@pytest.mark.unit
+def test_latest_entry_epoch_ignores_other_sessions_and_stages() -> None:
+    entries = [
+        LedgerEntry(
+            ts="2026-06-20T10:00:00+00:00",
+            session="other-session",
+            stage="bedrock",
+            backend="aws",
+            est_usd=1.0,
+            unit_price_usd=0.005,
+            cumulative_month_usd=1.0,
+        ),
+        _entry("2026-06-20T09:00:00+00:00", 1.0, stage="correct"),
+    ]
+    assert latest_entry_epoch(entries, "20260625-120156", "bedrock") is None
+
+
+@pytest.mark.unit
+def test_latest_entry_epoch_returns_the_most_recent_matching_timestamp() -> None:
+    entries = [
+        _entry("2026-06-20T09:00:00+00:00", 1.0, stage="bedrock"),
+        _entry("2026-06-20T10:30:00+00:00", 1.0, stage="bedrock"),
+        _entry("2026-06-20T09:45:00+00:00", 1.0, stage="bedrock"),
+    ]
+    latest = latest_entry_epoch(entries, "20260625-120156", "bedrock")
+    expected = datetime.fromisoformat("2026-06-20T10:30:00+00:00").timestamp()
+    assert latest == expected

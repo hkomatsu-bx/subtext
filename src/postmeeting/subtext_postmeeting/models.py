@@ -198,6 +198,43 @@ class SpeakerCluster:
 
 
 @dataclass(frozen=True)
+class MeetingInfo:
+    """人手で記入する会議情報（会議名・日時・参加者。FR-MI-01）。
+
+    いずれも任意。未記入（None／空）の項目は summarize 側が現行の決定的算出へフォールバックする
+    （BR-MI-01・BR-SUM-09 改訂）。ここでの参加者は表示名（実名または話者ラベル）であり、
+    `speaker_names.json` の実名解決とは別ファイルで持つ（BR-NAME-04 のログ非出力規則と同様、
+    本体は PII を含み得るためログには出さない）。
+    """
+
+    title: str | None = None
+    meeting_datetime: str | None = None
+    participants: tuple[str, ...] = ()
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "datetime": self.meeting_datetime,
+            "participants": list(self.participants),
+        }
+
+    @staticmethod
+    def from_json(data: dict[str, Any]) -> "MeetingInfo":
+        title = data.get("title")
+        meeting_datetime = data.get("datetime")
+        participants = tuple(str(p).strip() for p in data.get("participants", []) if str(p).strip())
+        return MeetingInfo(
+            title=(str(title).strip() or None) if title else None,
+            meeting_datetime=(str(meeting_datetime).strip() or None) if meeting_datetime else None,
+            participants=participants,
+        )
+
+    def is_empty(self) -> bool:
+        """3項目すべて未記入かどうか（純粋・summarize のフォールバック判定に使う）。"""
+        return self.title is None and self.meeting_datetime is None and not self.participants
+
+
+@dataclass(frozen=True)
 class SpeakerNameMap:
     """spk_n→実名 のマッピング（FR-09・ファイル方式 Q3=A）。"""
 

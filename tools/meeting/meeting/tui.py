@@ -47,11 +47,13 @@ from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Input, Log, Static
 from textual.worker import Worker, WorkerState
 
+from meeting import edit as edit_mod
 from meeting import ledger, pipeline, runner, slack
+from meeting import materials as materials_mod
 from meeting.config import MeetingConfig
 from meeting.runner import Runner as SubprocessRunner
 from meeting.runner import SessionSummary, Stage
-from meeting.tui_modals import ConfirmModal, PathInputModal, SlackPostModal
+from meeting.tui_modals import ConfirmModal, MaterialsInputModal, PathInputModal, SlackPostModal
 from meeting.tui_minutes import (
     CLAUDE_WORKER_NAME,
     MINUTES_WORKER_GROUP,
@@ -87,6 +89,7 @@ from meeting.tui_view import (
 _SLACK_WORKER_GROUP = "slack"
 _RECORD_WORKER_GROUP = "record"
 _AUTH_WORKER_GROUP = "auth"
+_EDIT_WORKER_GROUP = "edit"  # ②議事録編集（外部エディタはブロッキングなのでスレッドで動かす）
 
 # 実行中をキャプションで示すボタン（待機ラベルは compose がそのまま使う）。
 _MINUTES_LABEL = "議事録作成 (m)"
@@ -109,6 +112,8 @@ class MeetingApp(App[None]):
         ("r", "record_toggle", "録音"),
         ("i", "import_vtt", "取込"),
         ("m", "minutes", "議事録"),
+        ("e", "edit_minutes", "議事録編集"),
+        ("d", "import_materials", "資料投入"),
         ("s", "slack", "Slack共有"),
         ("x", "delete_session", "削除"),
         ("a", "check_auth", "AWS確認"),
@@ -183,6 +188,8 @@ class MeetingApp(App[None]):
             )
             yield Button("録音開始 (r)", id="record-toggle", variant="success")
             yield Button(_MINUTES_LABEL, id="minutes-bedrock", variant="primary")
+            yield Button("議事録編集 (e)", id="edit-minutes")
+            yield Button("資料投入 (d)", id="import-materials")
             yield Button("Slack投稿 (s)", id="slack")
             yield Static("│\n│\n│", classes="sep")
             yield Button("再読込 (^R)", id="refresh")
@@ -473,6 +480,10 @@ class MeetingApp(App[None]):
             self.action_minutes()
         elif bid == "import-vtt":
             self.action_import_vtt()
+        elif bid == "edit-minutes":
+            self.action_edit_minutes()
+        elif bid == "import-materials":
+            self.action_import_materials()
         elif bid == "slack":
             self.action_slack()
         elif bid == "delete-session":
@@ -552,6 +563,69 @@ class MeetingApp(App[None]):
             self.log_line(f"{session.session_id} は録音中です。停止してから議事録を作成してください。")
             return
         self._minutes.start(session, claude=claude)
+
+    # --- 議事録編集（②議事録編集・Phase 1：外部エディタ） -----------------------
+
+    def action_edit_minutes(self) -> None:
+        """e: 議事録(minutes.md)を外部エディタで編集する。まだ生成されていなければ拒否する。
+
+        エディタ起動はブロッキング（ユーザーが閉じるまで戻らない）のため、録音起動と同様に
+        スレッドワーカーで実行し UI を止めない。
+        """
+        session = self._current_session()
+        if session is None:
+            self.log_line("セッションが選択されていません。")
+            return
+        if self.worker_active(_EDIT_WORKER_GROUP):
+            self.log_line("議事録を編集中です。エディタを閉じてから再度実行してください。")
+            return
+        session_id = session.session_id
+        minutes_path = self._cfg.session_out_dir(session_id) / "minutes.md"
+        if not minutes_path.is_file():
+            self.log_line(f"{session_id} はまだ議事録がありません（先に議事録を生成してください）。")
+            return
+
+        def work() -> tuple[str, tuple[str, ...]]:
+            _markdown, missing = edit_mod.edit(minutes_path)
+            return session_id, missing
+
+        self.start_session_worker(
+            work, group=_EDIT_WORKER_GROUP, session_id=session_id, activity=Activity.EDIT, name="edit"
+        )
+
+    # --- 付帯資料の投入（③付帯資料） --------------------------------------------
+
+    def action_import_materials(self) -> None:
+        """d: 付帯資料（.txt/.md/.pdf/.pptx）を投入するモーダルを開く。
+
+        解決・コピーは同期的なローカル IO のみ（AWS を呼ばない）ため、ワーカーへ退避しない。
+        実際の抽出・要約プロンプトへの反映は次回の議事録生成（Unit B）で行われる。
+        """
+        session = self._current_session()
+        if session is None:
+            self.log_line("セッションが選択されていません。")
+            return
+        session_id = session.session_id
+
+        def on_result(raw: str | None) -> None:
+            if raw is None:
+                self.log_line("資料投入を中止しました。")
+                return
+            lines = materials_mod.parse_input_lines(raw)
+            if not lines:
+                self.log_line("入力がありませんでした。")
+                return
+            resolved, warnings = materials_mod.resolve_paths(lines)
+            for warning in warnings:
+                self.log_line(f"⚠ {warning}")
+            if not resolved:
+                self.log_line("投入するファイルがありませんでした。")
+                return
+            materials_dir = materials_mod.copy_into(self._cfg, session_id, resolved)
+            self.log_line(f"{len(resolved)} 件を投入しました: {materials_dir}")
+            self.log_line("次回の議事録生成時に抽出され、内容が反映されます。")
+
+        self.push_screen(MaterialsInputModal(f"付帯資料の投入: {session_id}"), callback=on_result)
 
     # --- 取込（VTT=FR-17 / mp4=FR-18。拡張子で経路を振り分ける） -----------------
 
@@ -837,6 +911,8 @@ class MeetingApp(App[None]):
             self._on_slack_worker_done(event)
         elif event.worker.group == _RECORD_WORKER_GROUP:
             self._on_record_worker_done(event)
+        elif event.worker.group == _EDIT_WORKER_GROUP:
+            self._on_edit_worker_done(event)
 
     def _on_minutes_worker_done(self, event: Worker.StateChanged) -> None:
         if event.state is WorkerState.ERROR:
@@ -876,6 +952,19 @@ class MeetingApp(App[None]):
         stage = runner.detect_stage(self._cfg, session_id)
         for line in pipeline.next_steps_lines(stage, session_id, claude, vtt=True):
             self.log_line(line)
+
+    def _on_edit_worker_done(self, event: Worker.StateChanged) -> None:
+        if event.state is WorkerState.ERROR:
+            self.log_line(f"議事録の編集に失敗しました: {event.worker.error}")
+            return
+        assert event.worker.result is not None  # SUCCESS 時は work() の戻り値が必ずある
+        session_id, missing = event.worker.result
+        self.log_line(f"{session_id} の議事録を保存しました。")
+        if missing:
+            self.log_line(
+                "⚠ Slack 親メッセージ（要約）の抽出に使う見出しが欠けています: " + "、".join(missing)
+            )
+        self.log_line("Slack へ投稿済みの場合、この編集は反映されません（再投稿するとスレッドが増えます）。")
 
     def _on_slack_worker_done(self, event: Worker.StateChanged) -> None:
         if event.state is WorkerState.ERROR:

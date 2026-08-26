@@ -169,12 +169,33 @@ def _pending_llm_costs(
     if (
         sum_est is not None
         and runner.summarize_ran(cfg, session, claude=claude)
-        and not ledger.has_entry(entries, session, sum_est.stage)
+        and _summary_stage_not_yet_recorded(cfg, session, sum_est.stage, entries)
     ):
-        chars = runner.transcript_char_count(cfg, session)
+        chars = runner.transcript_char_count(cfg, session) + runner.materials_char_count(cfg, session)
         price = cfg.pricing.claude_input_usd_per_1k if claude else cfg.pricing.bedrock_input_usd_per_1k
         pending.append(_PendingCost(sum_est, {"chars": float(chars)}, price))
     return pending
+
+
+def _summary_stage_not_yet_recorded(
+    cfg: MeetingConfig, session: str, stage: str, entries: list[LedgerEntry]
+) -> bool:
+    """要約段の今回実行がまだ台帳に無いか（`meeting_info.json` 更新による再課金の取り込み）。
+
+    `minutes.md` の mtime が前回記録より新しければ「記録していない実行」とみなす。Bedrock 経路
+    （stage="bedrock"）のみが対象（Claude 経路は `final_transcript.json` を計上点にし、
+    meeting_info.json は要約段=Bedrock 呼び出しにしか影響しないため再課金が起きない）。
+    """
+    latest = ledger.latest_entry_epoch(entries, session, stage)
+    if latest is None:
+        return True
+    minutes_path = cfg.session_out_dir(session) / "minutes.md"
+    if not minutes_path.is_file():
+        return False
+    # 秒精度で比較する（台帳の ts は now_iso() で秒精度に丸められる一方、mtime は小数秒を
+    # 持つため、同じ壁時計の秒内に書込→記録が起きると mtime が常に「新しい」と誤判定し、
+    # 再課金していない同一実行の2回目呼び出しでも毎回 pending になってしまう）。
+    return int(minutes_path.stat().st_mtime) > int(latest)
 
 
 def _append_pending_costs(cfg: MeetingConfig, session: str, month: str, pending: list[_PendingCost]) -> float:

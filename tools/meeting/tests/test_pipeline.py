@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -382,6 +383,32 @@ def test_record_summary_cost_dedups_on_rerun(cfg: MeetingConfig, repo: Path) -> 
     second = pipeline.record_summary_cost(cfg, "meeting-x", False, month)
     assert second == 0.0
     assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "bedrock") == 1
+
+
+@pytest.mark.unit
+def test_record_summary_cost_recharges_when_minutes_regenerated_after_recording(
+    cfg: MeetingConfig, repo: Path
+) -> None:
+    """meeting_info.json 更新（FR-MI-01）で要約段が再実行され minutes.md が再生成されたら、
+    既に台帳へ記録済みの段でも新たな実行として再課金を記録する（has_entry の単純存在チェックでは
+    2回目以降の実課金が幻の非課金になる）。
+    """
+    write_pipeline_outputs(repo, "meeting-x", chars=500, raw=False)
+    month = ledger.month_of(ledger.now_iso())
+
+    first = pipeline.record_summary_cost(cfg, "meeting-x", False, month)
+    assert first > 0
+
+    # 要約段の再実行（Bedrock 再課金）を模す: minutes.md を書き直し、mtime を明確に先へ進める。
+    minutes_path = cfg.session_out_dir("meeting-x") / "minutes.md"
+    minutes_path.write_text("# 議事録（再生成）\n## 決定事項\n- 承認\n", encoding="utf-8")
+    future = minutes_path.stat().st_mtime + 10
+    os.utime(minutes_path, (future, future))
+
+    second = pipeline.record_summary_cost(cfg, "meeting-x", False, month)
+
+    assert second > 0
+    assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "bedrock") == 2
 
 
 # --- next_steps_lines（純粋） --------------------------------------------------

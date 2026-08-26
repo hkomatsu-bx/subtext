@@ -20,6 +20,7 @@ from . import (
     auth_check,
     auth_policy,
     correction as correction_mod,
+    materials as materials_mod,
     merger,
     parser,
     speaker_label,
@@ -30,6 +31,7 @@ from .errors import PipelineError
 from .models import (
     FinalTranscript,
     InputMode,
+    MeetingInfo,
     RawTranscript,
     RecordingInput,
     Stage,
@@ -58,6 +60,7 @@ class PipelineOptions:
     keep_s3: bool = False
     summarize: bool = True  # False=要約段(Bedrock)をスキップし議事録は外部生成に委ねる
     correct: bool = True  # False=LLM 後処理補正(Bedrock)をスキップ（--no-correct, FR-C2-02）
+    materials: bool = True  # False=付帯資料を無視して生成（--no-materials, FR-MAT-05）
 
 
 @dataclass(frozen=True)
@@ -128,7 +131,10 @@ class PostMeetingPipeline:
             # final_transcript.json までで停止する。議事録は外部（Claude Code 等）で生成する想定。
             if not options.summarize:
                 return self._summarize_skipped_result(rec.session_id, paths)
-            self._ensure_summarized(corrected, paths, forced)
+            explicit_force = options.force or options.target_stage is Stage.SUMMARIZED
+            self._ensure_summarized(
+                corrected, paths, forced, explicit_force=explicit_force, materials_enabled=options.materials
+            )
 
             return self._completed_result(rec.session_id, paths, vtt=False)
         finally:
@@ -142,6 +148,7 @@ class PostMeetingPipeline:
         *,
         summarize: bool = True,
         correct: bool = True,
+        materials: bool = True,
         force: bool = False,
         target_stage: Stage | None = None,
     ) -> PipelineResult:
@@ -180,7 +187,10 @@ class PostMeetingPipeline:
         # STS を呼ばない）。minutes 再利用で済む場合も確認は不要（FR-H2-07 と同じ安全側判定）。
         if not (paths.minutes.is_file() and not bool(forced & {Stage.SUMMARIZED})):
             self._check_credentials()
-        self._ensure_summarized(corrected, paths, forced)
+        explicit_force = force or target_stage is Stage.SUMMARIZED
+        self._ensure_summarized(
+            corrected, paths, forced, explicit_force=explicit_force, materials_enabled=materials
+        )
 
         return self._completed_result(merged.session_id, paths, vtt=True)
 
@@ -305,14 +315,75 @@ class PostMeetingPipeline:
         )
         return outcome.transcript
 
-    def _ensure_summarized(self, named: FinalTranscript, paths: "_Paths", forced: set[Stage]) -> None:
+    def _ensure_summarized(
+        self,
+        named: FinalTranscript,
+        paths: "_Paths",
+        forced: set[Stage],
+        *,
+        explicit_force: bool = False,
+        materials_enabled: bool = True,
+    ) -> None:
         force = bool(forced & {Stage.TRANSCRIBED, Stage.MERGED, Stage.NAMED, Stage.CORRECTED, Stage.SUMMARIZED})
         if paths.minutes.is_file() and not force:
             logger.info("議事録(minutes)を再利用")
             return
-        minutes = self._summarize(named, self._config)
+        if paths.minutes.is_file() and self._is_minutes_edited(paths) and not explicit_force:
+            # ②議事録編集。手編集済み（minutes.meta.json の edited=true）を自動トリガー（話者名・
+            # 会議情報の更新等）で黒く上書きすると、手編集した内容が課金しないまま消える。
+            # 明示の --force / --target-stage summarize のときだけ通す（BR-EDIT-01）。
+            raise PipelineError(
+                f"議事録は手編集済みです（{paths.minutes}）。自動更新による上書きを止めました。"
+                f"上書きするには --force または --target-stage summarize を明示してください"
+                f"（生成直後の版は {paths.minutes_generated} に退避済みです）。",
+                failed_stage="summarize",
+            )
+        meeting_info = self._read_meeting_info(paths)
+        materials_text = ""
+        if materials_enabled:
+            materials_result = self._ensure_materials(paths)
+            materials_text = materials_mod.format_for_prompt(materials_result)
+            for warning in materials_result.warnings:
+                logger.warning("付帯資料: %s", warning)
+            for name, reason in materials_result.excluded:
+                logger.warning("付帯資料を除外しました: %s（%s）", name, reason)
+        minutes = self._summarize(named, self._config, meeting_info=meeting_info, materials_text=materials_text)
         paths.minutes.write_text(minutes.markdown, encoding="utf-8")
-        _write_json(paths.minutes_meta, minutes.to_json())
+        _write_json(paths.minutes_meta, minutes.to_json())  # 新規生成に伴い edited フラグはリセットされる
+
+    def _ensure_materials(self, paths: "_Paths") -> materials_mod.MaterialsResult:
+        """付帯資料を抽出する。キャッシュ（materials.extracted.json）と一致すれば再抽出しない
+        （FR-MAT-02。差し替え・追加のあるファイルのみ抽出コストが発生する＝ローカル処理だが
+        pptx/pdf の解析は無視できない処理コストを持つため、変更のないフォルダでは走らせない）。
+        """
+        cache = materials_mod.load_cache(paths.materials_cache)
+        if not materials_mod.needs_extraction(paths.materials_dir, cache):
+            return cache if cache is not None else materials_mod.MaterialsResult()
+        if not paths.materials_dir.is_dir():
+            result = materials_mod.MaterialsResult()
+        else:
+            file_paths = tuple(sorted(p for p in paths.materials_dir.iterdir() if p.is_file()))
+            result = materials_mod.collect(file_paths, max_total_chars=self._config.materials_max_total_chars)
+        materials_mod.save_cache(paths.materials_cache, result)
+        return result
+
+    def _is_minutes_edited(self, paths: "_Paths") -> bool:
+        """`minutes.meta.json` の `edited` フラグを読む（会議ハーネスの `edit.py` が立てる）。"""
+        if not paths.minutes_meta.is_file():
+            return False
+        try:
+            data = _read_json(paths.minutes_meta, stage="summarize")
+        except PipelineError:
+            return False
+        return bool(data.get("edited", False))
+
+    def _read_meeting_info(self, paths: "_Paths") -> MeetingInfo | None:
+        """meeting_info.json を読む（未存在なら None＝summarize 側が現行算出へフォールバック, BR-MI-01）。"""
+        if not paths.meeting_info.is_file():
+            return None
+        data = _read_json(paths.meeting_info, stage="meeting_info")
+        info = MeetingInfo.from_json(data)
+        return None if info.is_empty() else info
 
     def _cleanup(self, rec: RecordingInput, keep_s3: bool) -> None:
         """当該 session の S3 オブジェクトを掃除する（ISS-13 / BR-H2-S3-01）。
@@ -421,7 +492,22 @@ class PostMeetingPipeline:
         """
         if _is_newer(paths.naming, paths.named):
             logger.info("話者名の更新を検知したため命名以降を再実行します")
-            return forced | {Stage.NAMED}
+            forced = forced | {Stage.NAMED}
+        if _is_newer(paths.meeting_info, paths.minutes):
+            # meeting_info.json は要約段の入力（[システム情報]見出し）にのみ効くため、命名・補正は
+            # 再実行しない（BR-MI-01）。Bedrock 再課金を伴うため、呼び出し側で額を提示してから
+            # 実行する経路（tools/meeting）を通す想定。
+            logger.info("会議情報の更新を検知したため議事録を再生成します")
+            forced = forced | {Stage.SUMMARIZED}
+        if paths.minutes.is_file() and (paths.materials_dir.is_dir() or paths.materials_cache.is_file()):
+            # ③付帯資料。materials/ の追加・差し替え・削除を検知したときのみ要約段を再実行する
+            # （FR-MAT-06）。一度も付帯資料を使っていないセッションでは判定を行わない
+            # （needs_extraction はキャッシュ・フォルダのいずれも無いと常に True を返すため、
+            # ガード無しだと付帯資料を使わない全セッションで無駄な再要約が走ってしまう）。
+            cache = materials_mod.load_cache(paths.materials_cache)
+            if materials_mod.needs_extraction(paths.materials_dir, cache):
+                logger.info("付帯資料の更新を検知したため議事録を再生成します")
+                forced = forced | {Stage.SUMMARIZED}
         return forced
 
     def _verify_same_input(self, merged: FinalTranscript, paths: "_Paths") -> None:
@@ -481,12 +567,28 @@ class _Paths:
         return self.out_dir / "speaker_names.json"
 
     @property
+    def meeting_info(self) -> Path:
+        return self.out_dir / "meeting_info.json"  # 人手記入・任意（FR-MI-01）
+
+    @property
+    def materials_dir(self) -> Path:
+        return self.out_dir / "materials"  # ③付帯資料。投入は呼び出し側（会議ハーネス）が行う
+
+    @property
+    def materials_cache(self) -> Path:
+        return self.out_dir / "materials.extracted.json"  # 抽出結果のキャッシュ（FR-MAT-02）
+
+    @property
     def minutes(self) -> Path:
         return self.out_dir / "minutes.md"
 
     @property
     def minutes_meta(self) -> Path:
         return self.out_dir / "minutes.meta.json"
+
+    @property
+    def minutes_generated(self) -> Path:
+        return self.out_dir / "minutes.generated.md"  # 手編集前の退避（会議ハーネスの edit.py が書く）
 
 
 def make_credential_checker(region: str) -> Callable[[], None]:

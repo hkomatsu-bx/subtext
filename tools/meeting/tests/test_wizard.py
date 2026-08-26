@@ -74,7 +74,7 @@ def test_wizard_bedrock_recorded_to_minutes(cfg: MeetingConfig, repo: Path, caps
         next(steps)()
         return 0
 
-    answers = iter(["山田太郎"])
+    answers = iter(["山田太郎", "", "", ""])
     rc = wizard.run(cfg, _SESSION, claude=False, run_minutes=run_minutes, ask=lambda _prompt: next(answers))
 
     out = capsys.readouterr().out
@@ -168,7 +168,7 @@ def test_wizard_fills_only_empty_labels(cfg: MeetingConfig, repo: Path) -> None:
     assert names["mappings"]["spk_0"] == "既存氏名"  # 既記入は温存
     assert names["mappings"]["spk_1"] == "佐藤花子"  # 空欄のみ記入
     assert names["mappings"]["self"] == "自分"  # self は温存
-    assert len(asked) == 1  # 空欄ラベルのみ質問
+    assert sum(1 for p in asked if "の実名" in p) == 1  # 空欄ラベルのみ質問
 
 
 @pytest.mark.integration

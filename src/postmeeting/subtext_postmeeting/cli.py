@@ -74,6 +74,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="LLM 後処理補正(Bedrock)をスキップし原文のまま final_transcript.json を生成する（Bedrock 未課金）",
     )
+    parser.add_argument(
+        "--no-materials",
+        action="store_true",
+        help="materials/ の付帯資料を無視して議事録を生成する（③付帯資料）",
+    )
     parser.add_argument("--keep-s3", action="store_true", help="成功後も S3 オブジェクトを保持する")
     parser.add_argument("--env-file", type=Path, help=".env のパス（既定: カレントの .env）")
     parser.add_argument(
@@ -138,6 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                 keep_s3=args.keep_s3 or config.keep_s3,
                 summarize=summarize,
                 correct=correct,
+                materials=not args.no_materials,
             )
             result = PostMeetingPipeline(config).run(options)
     except PipelineError as exc:
@@ -201,6 +207,7 @@ def _run_vtt(args: argparse.Namespace, config: PipelineConfig, target_stage: Sta
         merged,
         summarize=summarize,
         correct=correct,
+        materials=not args.no_materials,
         force=args.force,
         target_stage=target_stage,
     )

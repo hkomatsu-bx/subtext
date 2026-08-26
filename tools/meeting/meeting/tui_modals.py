@@ -16,7 +16,7 @@ from typing import Sequence
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Static
+from textual.widgets import Button, Input, Static, TextArea
 
 from meeting import naming
 
@@ -291,6 +291,139 @@ class SpeakerNamesModal(ModalScreen[dict[str, str] | None]):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         self.dismiss(self._collect() if event.button.id == "ok" else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class MeetingInfoModal(ModalScreen[dict[str, str] | None]):
+    """会議情報（会議名・日時・参加者）の記入モーダル（FR-MI-01）。
+
+    すべて任意。OK で `{"title": ..., "datetime": ..., "participants": "..."}`（参加者はカンマ／
+    読点区切りの1行）を返し、キャンセルで None を返す。参加者名は PII を含み得るため、この画面
+    以外（ログ等）へは出さない（BR-NAME-04 と同じ扱い）。既存値があれば初期値として表示する。
+    """
+
+    DEFAULT_CSS = """
+    MeetingInfoModal {
+        align: center middle;
+    }
+    MeetingInfoModal > Vertical {
+        width: 70%;
+        height: auto;
+        border: round $accent;
+        padding: 1 2;
+        background: $surface;
+    }
+    MeetingInfoModal .modal-title {
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    MeetingInfoModal .field-label {
+        padding-top: 1;
+    }
+    MeetingInfoModal Horizontal {
+        height: auto;
+        padding-top: 1;
+    }
+    """
+    BINDINGS = [("escape", "cancel", "")]
+
+    def __init__(self, title: str, *, initial: dict[str, str] | None = None) -> None:
+        super().__init__()
+        self._title = title
+        initial = initial or {}
+        self._initial_title = str(initial.get("title") or "")
+        self._initial_datetime = str(initial.get("datetime") or "")
+        self._initial_participants = str(initial.get("participants") or "")
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(self._title, classes="modal-title", markup=False)
+            yield Static("すべて任意です。空欄のままなら既存の算出値のまま議事録を生成します。", markup=False)
+            yield Static("会議名", classes="field-label")
+            yield Input(id="mi-title", value=self._initial_title, placeholder="例: 定例会")
+            yield Static("日時", classes="field-label")
+            yield Input(id="mi-datetime", value=self._initial_datetime, placeholder="例: 2026-08-26 10:00")
+            yield Static("参加者（読点またはカンマ区切り）", classes="field-label")
+            yield Input(id="mi-participants", value=self._initial_participants, placeholder="例: 田中、山田（A社）")
+            with Horizontal():
+                yield Button("保存して続行", id="ok", classes="dialog-btn-primary")
+                yield Button("スキップ (Esc)", id="cancel", classes="dialog-btn-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#mi-title", Input).focus()
+
+    def _collect(self) -> dict[str, str]:
+        return {
+            "title": self.query_one("#mi-title", Input).value,
+            "datetime": self.query_one("#mi-datetime", Input).value,
+            "participants": self.query_one("#mi-participants", Input).value,
+        }
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        self.dismiss(self._collect() if event.button.id == "ok" else None)
+
+    def action_cancel(self) -> None:
+        self.dismiss(None)
+
+
+class MaterialsInputModal(ModalScreen[str | None]):
+    """付帯資料の投入モーダル（③付帯資料）。複数行入力（1行1パス／フォルダ／glob）を受ける。
+
+    OK で複数行文字列（空も含む）、Esc/キャンセルで None を返す。実際の解決・コピーは
+    呼び出し側（`materials.resolve_paths`/`materials.copy_into`）に委ねる。
+    """
+
+    DEFAULT_CSS = """
+    MaterialsInputModal {
+        align: center middle;
+    }
+    MaterialsInputModal > Vertical {
+        width: 80%;
+        height: 70%;
+        border: round $accent;
+        padding: 1 2;
+        background: $surface;
+    }
+    MaterialsInputModal .modal-title {
+        text-style: bold;
+        padding-bottom: 1;
+    }
+    MaterialsInputModal TextArea {
+        height: 1fr;
+    }
+    MaterialsInputModal Horizontal {
+        height: auto;
+        padding-top: 1;
+    }
+    """
+    BINDINGS = [("escape", "cancel", "")]
+
+    def __init__(self, title: str) -> None:
+        super().__init__()
+        self._title = title
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Static(self._title, classes="modal-title")
+            yield Static(
+                "1行に1つ：ファイルパス／フォルダ／glob（*.pptx 等）。対応形式は .txt/.md/.pdf/.pptx。",
+                markup=False,
+            )
+            yield TextArea(id="materials-input")
+            with Horizontal():
+                yield Button("投入する", id="ok", classes="dialog-btn-primary")
+                yield Button("キャンセル (Esc)", id="cancel", classes="dialog-btn-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#materials-input", TextArea).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "ok":
+            self.dismiss(self.query_one("#materials-input", TextArea).text)
+        else:
+            self.dismiss(None)
 
     def action_cancel(self) -> None:
         self.dismiss(None)

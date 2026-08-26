@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Callable
 
-from meeting import naming, runner
+from meeting import meeting_info, naming, runner
 from meeting.config import MeetingConfig
 from meeting.runner import Stage
 
@@ -75,6 +75,7 @@ def run(
 
         if stage is Stage.NAMING_REQUIRED:
             _prompt_speaker_names(cfg, session, ask, emit)
+            _prompt_meeting_info(cfg, session, ask, emit)
 
         before = stage
         rc = run_minutes(session)
@@ -128,6 +129,28 @@ def _prompt_speaker_names(cfg: MeetingConfig, session: str, ask: Ask, emit: Emit
 
     naming.save(path, naming.apply_names(data, names))
     emit("  speaker_names.json を更新しました。")
+
+
+def _prompt_meeting_info(cfg: MeetingConfig, session: str, ask: Ask, emit: Emit) -> None:
+    """meeting_info.json への会議名・日時・参加者の記入を訊く（FR-MI-01）。
+
+    話者名ゲートと同じ停止点で続けて訊く。全項目任意で、未存在時のみ訊く
+    （2回目以降の実行で毎回訊かれると煩わしいため。修正したい場合はファイルを直接編集する）。
+    """
+    path = meeting_info.path_for(cfg.session_out_dir(session))
+    if path.is_file():
+        return
+
+    emit("会議情報の記入（すべて任意。Enter でスキップ）:")
+    title = ask("  会議名 > ")
+    meeting_datetime = ask("  日時 > ")
+    participants_line = ask("  参加者（読点またはカンマ区切り） > ")
+    data = meeting_info.build(title, meeting_datetime, participants_line)
+    meeting_info.save(path, data)
+    if meeting_info.is_empty(data):
+        emit("  （記入なし。既存の算出値のまま議事録を生成します）")
+    else:
+        emit("  meeting_info.json を保存しました。")
 
 
 def _show_minutes(cfg: MeetingConfig, session: str, emit: Emit) -> None:

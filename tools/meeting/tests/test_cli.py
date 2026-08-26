@@ -208,3 +208,62 @@ def test_profile_option_is_not_offered_where_aws_is_unused(cfg: MeetingConfig) -
     for command in ("record", "stop", "status", "cost", "slack"):
         with pytest.raises(SystemExit):
             main([command, "--profile", "x"], cfg=cfg, run=_ok_runner())
+
+
+@pytest.mark.integration
+def test_edit_command_errors_when_no_minutes(cfg: MeetingConfig, repo: Path, capsys) -> None:
+    write_manifest(repo, _SESSION, self_sec=1.0, others_sec=1.0)
+    rc = main(["edit", _SESSION], cfg=cfg, run=_ok_runner())
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "議事録がありません" in err
+
+
+@pytest.mark.integration
+def test_edit_command_marks_edited_and_warns_on_missing_headings(
+    cfg: MeetingConfig, repo: Path, capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_manifest(repo, _SESSION, self_sec=1.0, others_sec=1.0)
+    write_pipeline_outputs(repo, _SESSION)
+
+    def fake_launch(path: Path) -> None:
+        path.write_text("本文だけになった\n", encoding="utf-8")
+
+    monkeypatch.setattr("meeting.cli.edit_mod.default_launcher", lambda editor: fake_launch)
+
+    rc = main(["edit", _SESSION], cfg=cfg, run=_ok_runner())
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "保存しました" in out
+    assert "決定事項" in out and "ToDo" in out  # 見出し欠落の警告
+    minutes_path = cfg.session_out_dir(_SESSION) / "minutes.md"
+    assert minutes_path.read_text(encoding="utf-8") == "本文だけになった\n"
+
+
+@pytest.mark.integration
+def test_materials_command_copies_resolved_files(cfg: MeetingConfig, repo: Path, tmp_path: Path, capsys) -> None:
+    write_manifest(repo, _SESSION, self_sec=1.0, others_sec=1.0)
+    src = tmp_path / "docs"
+    src.mkdir()
+    (src / "agenda.txt").write_text("本文", encoding="utf-8")
+    (src / "image.png").write_text("ignored", encoding="utf-8")
+
+    rc = main(["materials", _SESSION, str(src)], cfg=cfg, run=_ok_runner())
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "1 件を投入しました" in out
+    assert "image.png" in out  # 未対応拡張子への警告
+    materials_dir = cfg.session_out_dir(_SESSION) / "materials"
+    assert (materials_dir / "agenda.txt").is_file()
+    assert not (materials_dir / "image.png").is_file()
+
+
+@pytest.mark.integration
+def test_materials_command_errors_when_nothing_resolved(cfg: MeetingConfig, repo: Path, capsys) -> None:
+    write_manifest(repo, _SESSION, self_sec=1.0, others_sec=1.0)
+    rc = main(["materials", _SESSION, "no-such-file.txt"], cfg=cfg, run=_ok_runner())
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "投入するファイルがありませんでした" in out

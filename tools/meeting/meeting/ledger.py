@@ -143,6 +143,21 @@ def has_entry(entries: list[LedgerEntry], session: str, stage: str) -> bool:
     return any(e.session == session and e.stage == stage for e in entries)
 
 
+def latest_entry_epoch(entries: list[LedgerEntry], session: str, stage: str) -> float | None:
+    """同一セッション・同一段の最新記録のエポック秒（無ければ None）。
+
+    `meeting_info.json` 更新（FR-MI-01）は要約段の再実行・再課金を伴う。`has_entry` の単純な
+    存在チェックでは「同一段は一度だけ課金される」という前提が崩れ、2回目以降の実課金が
+    台帳へ記録されない（幻の非課金）。呼び出し側は成果物の mtime とここを比較し、
+    前回記録より後に成果物が更新されていれば「まだ記録していない実行」と判定する。
+    """
+    matching = [e for e in entries if e.session == session and e.stage == stage]
+    if not matching:
+        return None
+    latest = max(matching, key=lambda e: e.ts)
+    return datetime.fromisoformat(latest.ts).timestamp()
+
+
 def monthly_total(entries: list[LedgerEntry], month: str) -> float:
     """指定月(YYYY-MM)の概算合計 USD。"""
     total = sum(e.est_usd for e in entries if month_of(e.ts) == month)

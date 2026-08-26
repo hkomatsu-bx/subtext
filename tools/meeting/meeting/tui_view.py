@@ -75,6 +75,7 @@ class Activity(str, Enum):
     MINUTES = "minutes"
     IMPORT = "import"
     SHARING = "sharing"
+    EDIT = "edit"  # ②議事録編集（外部エディタ）
 
 
 # マーカー（`#` 列の先頭）の文字と色。録音だけ専用色にする。
@@ -83,6 +84,7 @@ _ACTIVITY_MARKERS: dict[Activity, tuple[str, str]] = {
     Activity.MINUTES: ("◐", ACTIVITY_ACCENT),
     Activity.IMPORT: ("◐", ACTIVITY_ACCENT),
     Activity.SHARING: ("◐", ACTIVITY_ACCENT),
+    Activity.EDIT: ("◐", ACTIVITY_ACCENT),
 }
 # `段` 列に出す進行中の文字（マーカーだけでは録音と他の処理しか区別できないため）。
 _ACTIVITY_STAGE_LABELS: dict[Activity, str] = {
@@ -90,6 +92,7 @@ _ACTIVITY_STAGE_LABELS: dict[Activity, str] = {
     Activity.MINUTES: "議事録生成中…",
     Activity.IMPORT: "取込中…",
     Activity.SHARING: "Slack投稿中…",
+    Activity.EDIT: "議事録編集中…",
 }
 # マーカーを置かない行の埋め（マーカーの有無で通し番号の桁がずれると列全体が動く）。
 _NO_MARKER = " "
