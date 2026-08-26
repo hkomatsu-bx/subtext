@@ -17,7 +17,9 @@ namespace Subtext.Live;
 internal sealed class AudioTimeline
 {
     private readonly double _bytesPerSecond;
-    private readonly object _gate = new();
+    // .NET 9 / C# 13 以降は専用の Lock 型を使う（object ロックより速く、同期用でないオブジェクトを
+    // 誤ってロックする事故も防げる。IDE0330）。音声チャンクごとに通る経路なので効きやすい。
+    private readonly Lock _gate = new();
 
     private double _sentSeconds; // 送信済み音声の累積秒
     private double _anchorAudioSeconds; // 基準点チャンクの開始位置（音声時間）

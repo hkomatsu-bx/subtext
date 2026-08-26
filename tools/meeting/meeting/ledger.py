@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -93,7 +93,7 @@ class LedgerEntry:
 
 def now_iso() -> str:
     """現在時刻を ISO8601(UTC, 秒精度) 文字列で返す（runner 用の時刻 seam）。"""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def month_of(ts: str) -> str:

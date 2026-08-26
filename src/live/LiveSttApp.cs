@@ -9,35 +9,26 @@ namespace Subtext.Live;
 /// （D1。旧 fail-fast 全体停止は撤廃）。全系統共通の停止信号は ct（Ctrl+C）のみ。
 /// 録音・正規化・同期は持たない（capture 責務）。
 /// </summary>
-public sealed class LiveSttApp
+/// <param name="clock">現在時刻の取得。再接続の決定化 seam（本番は実時刻）。</param>
+/// <param name="jitter">バックオフのジッタ [0,1)。決定化 seam（本番は実乱数）。</param>
+/// <param name="sink">確定字幕の永続化先（B1F）。null なら永続化しない＝従来挙動。所有権は呼び出し側（Dispose）。</param>
+public sealed class LiveSttApp(
+    IAudioCapture capture,
+    ILiveTranscribeClient transcribe,
+    CaptionRenderer renderer,
+    LiveSttConfig config,
+    Func<DateTime>? clock = null,
+    Func<double>? jitter = null,
+    ICaptionSink? sink = null)
 {
-    private readonly IAudioCapture _capture;
-    private readonly ILiveTranscribeClient _transcribe;
-    private readonly CaptionRenderer _renderer;
-    private readonly LiveSttConfig _config;
-    private readonly Func<DateTime> _clock;
-    private readonly Func<double> _jitter;
-    private readonly ICaptionSink? _sink;
-
-    public LiveSttApp(
-        IAudioCapture capture,
-        ILiveTranscribeClient transcribe,
-        CaptionRenderer renderer,
-        LiveSttConfig config,
-        Func<DateTime>? clock = null,
-        Func<double>? jitter = null,
-        ICaptionSink? sink = null)
-    {
-        _capture = capture ?? throw new ArgumentNullException(nameof(capture));
-        _transcribe = transcribe ?? throw new ArgumentNullException(nameof(transcribe));
-        _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
-        _config = config ?? throw new ArgumentNullException(nameof(config));
-        // clock/jitter は再接続の決定化 seam（既存 startUtcOverride と同じ方針）。本番は実時刻・実乱数。
-        _clock = clock ?? (() => DateTime.UtcNow);
-        _jitter = jitter ?? (() => Random.Shared.NextDouble());
-        // sink は確定字幕の永続化 seam（B1F）。null なら永続化しない＝従来挙動。所有権は呼び出し側（Dispose）。
-        _sink = sink;
-    }
+    private readonly IAudioCapture _capture = capture ?? throw new ArgumentNullException(nameof(capture));
+    private readonly ILiveTranscribeClient _transcribe =
+        transcribe ?? throw new ArgumentNullException(nameof(transcribe));
+    private readonly CaptionRenderer _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
+    private readonly LiveSttConfig _config = config ?? throw new ArgumentNullException(nameof(config));
+    private readonly Func<DateTime> _clock = clock ?? (() => DateTime.UtcNow);
+    private readonly Func<double> _jitter = jitter ?? (() => Random.Shared.NextDouble());
+    private readonly ICaptionSink? _sink = sink;
 
     /// <summary>
     /// 全系統を並行にストリーミングする。各系統は独立して再接続し、恒久障害/予算超過の系統のみ終了する。

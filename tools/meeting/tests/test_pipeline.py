@@ -529,3 +529,38 @@ def test_claude_stage_does_not_recharge_on_local_regeneration(cfg: MeetingConfig
     pipeline.record_summary_cost(cfg, "meeting-x", True, month)
 
     assert sum(1 for e in ledger.load(cfg.ledger_path) if e.stage == "claude") == 1
+
+
+@pytest.mark.unit
+def test_append_pending_costs_accumulates_month_total_across_items(cfg: MeetingConfig, repo: Path) -> None:
+    """複数段を一度に追記しても cumulativeMonthUsd が段ごとに積み上がること（R-6/S-4）。
+
+    月次累計はロックの内側で 1 回だけ読み、以降は自分が積んだ分を加算する。項目ごとに読み直す
+    実装から変えたため、累計が「最後の 1 件ぶんだけ」にならないことを固定する。
+    """
+    write_manifest(repo, _SESSION, self_sec=60.0, others_sec=60.0)
+    write_pipeline_outputs(repo, _SESSION, chars=1000, correction_status="applied")
+    month = ledger.month_of(ledger.now_iso())
+
+    per_run = pipeline.record_costs(cfg, _SESSION, False, month)
+
+    entries = ledger.load(cfg.ledger_path)
+    assert len(entries) == 3  # transcribe / correct / bedrock
+    cumulatives = [e.cumulative_month_usd for e in entries]
+    assert cumulatives == sorted(cumulatives), "累計は単調増加でなければならない"
+    assert cumulatives[-1] == pytest.approx(per_run, abs=1e-4)
+    assert cumulatives[-1] == pytest.approx(ledger.monthly_total(entries, month), abs=1e-4)
+
+
+@pytest.mark.unit
+def test_append_pending_costs_starts_from_existing_month_total(cfg: MeetingConfig, repo: Path) -> None:
+    """既存の月次合計に積み増すこと（1 回読みでも過去分を無視しない）。"""
+    write_pipeline_outputs(repo, "older", chars=500, raw=False)
+    month = ledger.month_of(ledger.now_iso())
+    first = pipeline.record_summary_cost(cfg, "older", False, month)
+
+    write_pipeline_outputs(repo, "newer", chars=500, raw=False)
+    pipeline.record_summary_cost(cfg, "newer", False, month)
+
+    entries = ledger.load(cfg.ledger_path)
+    assert entries[-1].cumulative_month_usd == pytest.approx(first + entries[-1].est_usd, abs=1e-4)

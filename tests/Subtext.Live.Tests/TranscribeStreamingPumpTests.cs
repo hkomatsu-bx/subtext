@@ -16,7 +16,7 @@ public sealed class TranscribeStreamingPumpTests
     private const int SampleRate = 16_000;
 
     private static AudioFrame Frame(DateTime? captureUtc = null) =>
-        new(Array.Empty<byte>(), AudioFormat.Normalized, captureUtc ?? DateTime.UtcNow);
+        new([], AudioFormat.Normalized, captureUtc ?? DateTime.UtcNow);
 
     private static async IAsyncEnumerable<AudioFrame> FramesAsync(
         IEnumerable<AudioFrame> items,

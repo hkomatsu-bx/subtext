@@ -127,8 +127,18 @@ class MaterialsResult:
 
 
 def content_hash(path: Path) -> str:
-    """ファイル内容の SHA-256（差分検知用）。"""
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """ファイル内容の SHA-256（差分検知用）。
+
+    `hashlib.file_digest` は内部でブロック単位に読むため、ファイル全量をメモリへ載せない。
+    materials/ には誤って巨大なファイル（動画等）が置かれ得るので、読み方をここで固定する。
+    """
+    with path.open("rb") as fh:
+        return hashlib.file_digest(fh, "sha256").hexdigest()
+
+
+def _digest_bytes(data: bytes) -> str:
+    """既に読み込んだバイト列の SHA-256（同じファイルを二度読まないため）。"""
+    return hashlib.sha256(data).hexdigest()
 
 
 def _safe_content_hash(path: Path) -> str:
@@ -153,15 +163,19 @@ def extract_one(path: Path, *, content_digest: str | None = None) -> MaterialTex
     if suffix not in _SUPPORTED_SUFFIXES:
         raise PipelineError(f"未対応の資料形式です（対象外）: {path.name}", failed_stage=_STAGE)
 
-    digest = content_digest if content_digest else content_hash(path)
     if suffix in (".txt", ".md"):
+        # テキストは 1 回の読取でハッシュと本文の両方を得る（ハッシュのために読み直さない）。
+        data = _read_bytes(path)
         return MaterialText(
             file_name=path.name,
             kind=suffix.lstrip("."),
             extraction_method="text",
-            content_hash=digest,
-            text=_read_text(path),
+            content_hash=content_digest or _digest_bytes(data),
+            text=_decode(data, path.name),
         )
+
+    # pdf/pptx は解析ライブラリがファイルを自ら読むため、ハッシュは逐次読みで別に取る。
+    digest = content_digest or content_hash(path)
     if suffix == ".pdf":
         text = _extract_pdf_text(path)
         if not text.strip():
@@ -182,14 +196,22 @@ def extract_one(path: Path, *, content_digest: str | None = None) -> MaterialTex
     )
 
 
-def _read_text(path: Path) -> str:
-    data = path.read_bytes()
+def _read_bytes(path: Path) -> bytes:
+    """テキスト資料の生バイト列（読取失敗は actionable な PipelineError）。"""
+    try:
+        return path.read_bytes()
+    except OSError as exc:
+        raise PipelineError(f"資料を読み込めません: {path.name}", failed_stage=_STAGE) from exc
+
+
+def _decode(data: bytes, name: str) -> str:
+    """テキスト資料をデコードする（UTF-8 → CP932 の順・純粋）。"""
     for encoding in _ENCODINGS:
         try:
             return data.decode(encoding)
         except UnicodeDecodeError:
             continue
-    raise PipelineError(f"文字コードを判定できません（UTF-8/CP932 以外）: {path.name}", failed_stage=_STAGE)
+    raise PipelineError(f"文字コードを判定できません（UTF-8/CP932 以外）: {name}", failed_stage=_STAGE)
 
 
 def _extract_pdf_text(path: Path) -> str:
@@ -240,13 +262,14 @@ def collect(paths: tuple[Path, ...], *, max_total_chars: int) -> MaterialsResult
 
     for path in paths:
         # 抽出の成否に関わらず「見た」ことを記録する（差分検知の母集団。MaterialsResult 参照）。
-        digest = _safe_content_hash(path)
-        fingerprints.append((path.name, digest))
+        # 成功時は抽出が算出したハッシュを流用し、同じファイルを二度ハッシュしない。
         try:
-            material = extract_one(path, content_digest=digest)
+            material = extract_one(path)
         except PipelineError as exc:
             warnings.append(str(exc))
+            fingerprints.append((path.name, _safe_content_hash(path)))
             continue
+        fingerprints.append((material.file_name, material.content_hash))
         if total + material.char_count > max_total_chars:
             excluded.append((material.file_name, f"文字数上限（{max_total_chars}）を超えるため除外"))
             continue

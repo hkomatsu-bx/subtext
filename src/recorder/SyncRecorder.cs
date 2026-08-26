@@ -8,17 +8,12 @@ namespace Subtext.Recorder;
 /// 異常時は fail-fast＋部分保存（Q7=A）: 片系統の障害で両系統を停止し、書込済みを確定後に
 /// RecordingException を送出する。マニフェスト/メタは常に出力される。
 /// </summary>
-public sealed class SyncRecorder
+/// <param name="normalizer">L4 正規化器。</param>
+/// <param name="warn">品質警告の出力先（BR-QLT-03）。null なら警告を捨てる。CLI は stderr を渡す。</param>
+public sealed class SyncRecorder(AudioNormalizer normalizer, Action<string>? warn = null)
 {
-    private readonly AudioNormalizer _normalizer;
-    private readonly Action<string>? _warn;
-
-    /// <param name="warn">品質警告の出力先（BR-QLT-03）。null なら警告を捨てる。CLI は stderr を渡す。</param>
-    public SyncRecorder(AudioNormalizer normalizer, Action<string>? warn = null)
-    {
-        _normalizer = normalizer ?? throw new ArgumentNullException(nameof(normalizer));
-        _warn = warn;
-    }
+    private readonly AudioNormalizer _normalizer = normalizer ?? throw new ArgumentNullException(nameof(normalizer));
+    private readonly Action<string>? _warn = warn;
 
     /// <summary>
     /// 2系統を録音し、WAV・メタ・マニフェストを出力する。
@@ -110,7 +105,7 @@ public sealed class SyncRecorder
         var manifest = new RecordingManifest(
             options.SessionId,
             DateTime.UtcNow,
-            new[] { selfMeta, othersMeta },
+            [selfMeta, othersMeta],
             status,
             t0);
 

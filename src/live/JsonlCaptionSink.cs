@@ -22,7 +22,9 @@ public sealed class JsonlCaptionSink : ICaptionSink
 
     private readonly FileStream _stream;
     private readonly StreamWriter _writer;
-    private readonly object _gate = new();
+    // .NET 9 / C# 13 以降は専用の Lock 型を使う（IDE0330。同期用でないオブジェクトを
+    // 誤ってロックする事故を防ぐ）。
+    private readonly Lock _gate = new();
 
     public JsonlCaptionSink(string path)
     {

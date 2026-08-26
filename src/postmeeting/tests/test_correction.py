@@ -454,3 +454,57 @@ class TestPipelineWiring:
         r = pipe.run_from_transcript(_merged(), summarize=True)
         assert r.status == ResultStatus.COMPLETED
         assert seen == ["BeeX の話"]  # 要約段は補正後を受け取る
+
+
+class TestApplyDictionarySinglePass:
+    """辞書段は 1 パス（S-1）。置換で生まれた正規表記を再走査しない。"""
+
+    def test_replacement_result_is_not_rescanned(self) -> None:
+        """`bx`→`BeeX` の結果に、別エイリアス `Bee` が連鎖して当たらないこと。
+
+        エイリアスごとに subn を回す実装では、先に `bx → BeeX` が起き、その `Bee` に
+        後続ルールが当たって `<社名>X` のような二重置換になる（本文が壊れる）。
+        """
+        terms = (
+            CorrectionTerm(canonical="BeeX", aliases=("bx",)),
+            CorrectionTerm(canonical="<社名>", aliases=("Bee",)),
+        )
+
+        segs, hits = apply_dictionary((_seg("bx の件"),), terms)
+
+        assert segs[0].text == "BeeX の件"
+        assert hits == 1
+
+    def test_longest_alias_wins_at_same_position(self) -> None:
+        """同じ位置に複数のエイリアスが当たる場合は長い方を採る（交替は長い順に並べる）。"""
+        terms = (
+            CorrectionTerm(canonical="長", aliases=("ビーエックス",)),
+            CorrectionTerm(canonical="短", aliases=("ビーエ",)),
+        )
+
+        segs, hits = apply_dictionary((_seg("ビーエックスの話"),), terms)
+
+        assert segs[0].text == "長の話"
+        assert hits == 1
+
+    def test_unchanged_segment_is_returned_as_is(self) -> None:
+        """置換が無いセグメントは同一オブジェクトを返す（無駄なコピーをしない）。"""
+        seg = _seg("無関係な本文")
+        segs, hits = apply_dictionary((seg,), _TERMS)
+
+        assert segs[0] is seg
+        assert hits == 0
+
+    def test_ascii_alias_matches_case_insensitively_in_single_pass(self) -> None:
+        """1 パス化後も ASCII の大小無視が効くこと（要素ごとのインラインフラグ）。"""
+        segs, _ = apply_dictionary((_seg("Bx と bX と BX"),), _TERMS)
+        assert segs[0].text == "BeeX と BeeX と BeeX"
+
+    def test_japanese_alias_stays_case_sensitive(self) -> None:
+        """和文は厳密一致のまま（パターン全体に IGNORECASE を掛けていないこと）。"""
+        terms = (CorrectionTerm(canonical="OK", aliases=("ａｂｃ",)),)
+
+        segs, hits = apply_dictionary((_seg("ＡＢＣ"),), terms)
+
+        assert segs[0].text == "ＡＢＣ"
+        assert hits == 0

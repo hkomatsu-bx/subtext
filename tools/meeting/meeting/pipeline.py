@@ -236,19 +236,25 @@ def _stage_not_yet_recorded(
 def _append_pending_costs(cfg: MeetingConfig, session: str, month: str, pending: list[_PendingCost]) -> float:
     """未追記のコスト項目を台帳へ追記し、今回分の合計 USD を返す。
 
-    各項目の load→cumulative_after→append は不可分でなければ累計が壊れるため、ループ全体を
-    プロセス内ロックで直列化する（並行パイプラインの累計取りこぼし防止）。
+    load→cumulative_after→append は不可分でなければ累計が壊れるため、全体をプロセス内ロックで
+    直列化する（並行パイプラインの累計取りこぼし防止）。
+
+    月次累計は**ロックの内側で 1 回だけ読み**、以降は自分が積んだ分を足していく。項目ごとに
+    読み直しても値は変わらない（他プロセスはロックの外にいないし、自分の append 分は加算で
+    追える）ため、台帳全体の再パースを項目数だけ繰り返す意味がない。
     """
+    if not pending:
+        return 0.0
     per_run = 0.0
     with _LEDGER_LOCK:
+        cumulative = ledger.monthly_total(ledger.load(cfg.ledger_path), month)
         for pc in pending:
-            current = ledger.load(cfg.ledger_path)
-            cum = ledger.cumulative_after(current, month, pc.estimate.usd)
+            cumulative = round(cumulative + pc.estimate.usd, 4)
             entry = runner.build_ledger_entry(
                 session,
                 pc.estimate,
                 unit_price_usd=pc.unit_price_usd,
-                cumulative_month_usd=cum,
+                cumulative_month_usd=cumulative,
                 units=pc.units,
                 profile=cfg.aws_profile,  # どの口座に出た支出かを残す
             )

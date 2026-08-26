@@ -20,7 +20,7 @@ public sealed class WasapiAudioCapture : IAudioCapture
     public IReadOnlyList<AudioDevice> ListDevices()
     {
         using var enumerator = new MMDeviceEnumerator();
-        var result = new List<AudioDevice>();
+        List<AudioDevice> result = [];
 
         var defaultRenderId = TryGetDefaultId(enumerator, DataFlow.Render);
         var defaultCaptureId = TryGetDefaultId(enumerator, DataFlow.Capture);

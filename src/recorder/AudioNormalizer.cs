@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Runtime.InteropServices;
 using Subtext.Capture;
 
 namespace Subtext.Recorder;
@@ -19,6 +21,10 @@ public readonly record struct ResampleState(double Position, float PrevSample)
 /// 16kHz / mono / 16bit PCM へ変換する。順序固定: ダウンミックス → リサンプル → 量子化。
 /// 入力は変更せず新フレームを返す（immutability）。本クラスは状態を持たずスレッド安全で、
 /// リサンプルの連続性状態は <see cref="ResampleState"/> として呼び出し側がストリームごとに保持する。
+///
+/// 中間の float バッファは <see cref="ArrayPool{T}"/> から借りる（10ms フレームが毎秒 100 回
+/// 通る経路で、借りた配列はこのメソッドの外へ出ない）。最終的な PCM バイト列だけは
+/// <see cref="AudioFrame"/> として下流（WAV 書込）へ渡るため、プールに載せず新規確保する。
 /// </summary>
 public sealed class AudioNormalizer
 {
@@ -29,117 +35,39 @@ public sealed class AudioNormalizer
     {
         ArgumentNullException.ThrowIfNull(raw);
 
-        float[] mono = ToMonoFloat(raw);                                   // step1: ダウンミックス
-        (float[] resampled, ResampleState next) =
-            Resample(mono, raw.Format.SampleRate, TargetSampleRate, state); // step2: リサンプル
-        byte[] pcm16 = ToPcm16(resampled);                                 // step3: 量子化(飽和)
-
-        return (raw with { Pcm = pcm16, Format = AudioFormat.Normalized }, next);
-    }
-
-    /// <summary>全チャンネルを平均して mono の float サンプル列へ変換する。</summary>
-    private static float[] ToMonoFloat(AudioFrame raw)
-    {
-        AudioFormat format = raw.Format;
-        int channels = format.Channels;
-        if (channels <= 0)
+        int frameCount = PcmFormat.FrameCount(raw.Format, raw.Pcm.Length);
+        float[] monoBuffer = ArrayPool<float>.Shared.Rent(frameCount + 1); // +1: 0 サンプルでも借りられる
+        try
         {
-            throw new NotSupportedException($"Invalid channel count: {channels}.");
-        }
+            Span<float> mono = monoBuffer.AsSpan(0, frameCount);
+            PcmFormat.ToMonoFloat(raw.Pcm, raw.Format, mono);               // step1: ダウンミックス
 
-        int bytesPerSample = format.BitDepth / 8;
-        int frameCount = raw.Pcm.Length / (bytesPerSample * channels);
-        var mono = new float[frameCount];
-        ReadOnlySpan<byte> span = raw.Pcm;
-
-        for (int i = 0; i < frameCount; i++)
-        {
-            float sum = 0f;
-            for (int c = 0; c < channels; c++)
+            // 同一レート・空フレームはリサンプルせず状態も進めない（連続性状態は次フレームへ持ち越す）。
+            if (raw.Format.SampleRate == TargetSampleRate || frameCount == 0)
             {
-                int offset = (i * channels + c) * bytesPerSample;
-                sum += ReadSample(span.Slice(offset, bytesPerSample), format);
+                return (Normalized(raw, PcmFormat.ToPcm16(mono)), state);
             }
 
-            mono[i] = sum / channels;
-        }
-
-        return mono;
-    }
-
-    /// <summary>1サンプルを [-1.0, 1.0] 規格の float として読む。代表的な WASAPI 形式に対応。</summary>
-    private static float ReadSample(ReadOnlySpan<byte> bytes, AudioFormat format)
-    {
-        if (format.SampleType == SampleType.IeeeFloat && format.BitDepth == 32)
-        {
-            return BitConverter.ToSingle(bytes);
-        }
-
-        if (format.SampleType == SampleType.Pcm && format.BitDepth == 16)
-        {
-            return BitConverter.ToInt16(bytes) / 32768f;
-        }
-
-        if (format.SampleType == SampleType.Pcm && format.BitDepth == 32)
-        {
-            return BitConverter.ToInt32(bytes) / 2147483648f;
-        }
-
-        throw new NotSupportedException($"Unsupported sample format: {format.SampleType} {format.BitDepth}bit.");
-    }
-
-    /// <summary>線形補間で srcRate から dstRate へリサンプルする。フレーム境界の端数位置と直前サンプルを
-    /// <paramref name="state"/> で持ち越す（切り捨てによる累積ドリフト防止）。同一レートはそのまま返す。</summary>
-    private static (float[] Output, ResampleState State) Resample(
-        float[] input, int srcRate, int dstRate, ResampleState state)
-    {
-        if (srcRate == dstRate || input.Length == 0)
-        {
-            return (input, state);
-        }
-
-        double step = (double)srcRate / dstRate; // 出力1サンプルあたりのソース進行量
-        double pos = state.Position;
-        int n = input.Length;
-
-        int count = pos > n - 1 ? 0 : (int)Math.Floor(((n - 1) - pos) / step) + 1;
-        var output = new float[count];
-
-        for (int k = 0; k < count; k++)
-        {
-            int index = (int)Math.Floor(pos);
-            double frac = pos - index;
-            float a = index < 0 ? state.PrevSample : input[index];
-            float b = index + 1 < n ? input[index + 1] : input[n - 1];
-            output[k] = (float)(a + ((b - a) * frac));
-            pos += step;
-        }
-
-        return (output, new ResampleState(pos - n, input[n - 1]));
-    }
-
-    /// <summary>float サンプルを 16bit PCM（リトルエンディアン）へ量子化する。範囲外は飽和（BR-FMT-03）。</summary>
-    private static byte[] ToPcm16(float[] samples)
-    {
-        var bytes = new byte[samples.Length * 2];
-
-        for (int i = 0; i < samples.Length; i++)
-        {
-            float value = samples[i];
-            if (value > 1f)
+            int outCount = PcmFormat.ResampledCount(frameCount, raw.Format.SampleRate, TargetSampleRate, state.Position);
+            float[] outBuffer = ArrayPool<float>.Shared.Rent(outCount + 1);
+            try
             {
-                value = 1f;
+                Span<float> resampled = outBuffer.AsSpan(0, outCount);
+                ResampleState next = PcmFormat.Resample(                     // step2: リサンプル
+                    mono, resampled, raw.Format.SampleRate, TargetSampleRate, state);
+                return (Normalized(raw, PcmFormat.ToPcm16(resampled)), next); // step3: 量子化(飽和)
             }
-            else if (value < -1f)
+            finally
             {
-                value = -1f;
+                ArrayPool<float>.Shared.Return(outBuffer);
             }
-
-            short sample = (short)Math.Round(value * 32767f);
-            bytes[i * 2] = (byte)(sample & 0xFF);
-            bytes[(i * 2) + 1] = (byte)((sample >> 8) & 0xFF);
         }
-
-        return bytes;
+        finally
+        {
+            ArrayPool<float>.Shared.Return(monoBuffer);
+        }
     }
+
+    private static AudioFrame Normalized(AudioFrame raw, byte[] pcm16) =>
+        raw with { Pcm = pcm16, Format = AudioFormat.Normalized };
 }

@@ -130,7 +130,7 @@ def _word_separator(language: str) -> str:
     英語等を指定したときに語が潰れないようにする。
     """
     code = language.strip().lower()
-    return "" if any(code.startswith(prefix) for prefix in _UNSPACED_LANGUAGE_PREFIXES) else " "
+    return "" if code.startswith(_UNSPACED_LANGUAGE_PREFIXES) else " "
 
 
 def _build_segments(labeled: list[tuple[str, _Token]], *, word_separator: str = "") -> list[TranscriptSegment]:
