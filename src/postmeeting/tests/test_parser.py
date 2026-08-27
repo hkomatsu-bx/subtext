@@ -70,3 +70,41 @@ class TestParseEdgeCases:
         }
         result = parse(raw, StreamRole.SELF, "s", "ja-JP")
         assert result.segments[0].confidence is None
+
+
+class TestWordSeparator:
+    """分かち書き言語では語間に空白を入れる（L-3: `LANGUAGE=en-US` で語が潰れないこと）。"""
+
+    def test_japanese_keeps_words_unspaced(self) -> None:
+        result = parse(others_transcribe_json(), StreamRole.OTHERS, "s", "ja-JP")
+        assert result.segments[1].text == "こんにちはございます"
+
+    def test_english_joins_words_with_space(self) -> None:
+        raw = {
+            "results": {
+                "items": [
+                    {
+                        "type": "pronunciation",
+                        "start_time": "0.0",
+                        "end_time": "0.4",
+                        "alternatives": [{"confidence": "0.9", "content": "hello"}],
+                    },
+                    {
+                        "type": "pronunciation",
+                        "start_time": "0.4",
+                        "end_time": "0.8",
+                        "alternatives": [{"confidence": "0.9", "content": "world"}],
+                    },
+                    {"type": "punctuation", "alternatives": [{"content": "."}]},
+                ]
+            }
+        }
+
+        result = parse(raw, StreamRole.SELF, "s", "en-US")
+
+        # 語間は空白、句読点は直前の語へ密着する。
+        assert result.segments[0].text == "hello world."
+
+    def test_language_matching_is_case_insensitive_and_prefix_based(self) -> None:
+        result = parse(others_transcribe_json(), StreamRole.OTHERS, "s", "JA-jp")
+        assert result.segments[1].text == "こんにちはございます"

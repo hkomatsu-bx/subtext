@@ -11,12 +11,16 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 
 # 台帳に残す既定の注記（概算である旨を各行に明示）。
 _DEFAULT_NOTE = "estimate; AWS Cost Explorer is source of truth"
+# `units` に載せる成果物の更新時刻（エポック秒）のキー。同一段の再課金判定に使う
+# （`latest_artifact_mtime`）。追記のみの台帳へ後付けしても過去行を壊さない。
+ARTIFACT_MTIME_UNIT = "artifactMtime"
+_ARTIFACT_MTIME_UNIT = ARTIFACT_MTIME_UNIT
 
 
 @dataclass(frozen=True)
@@ -89,7 +93,7 @@ class LedgerEntry:
 
 def now_iso() -> str:
     """現在時刻を ISO8601(UTC, 秒精度) 文字列で返す（runner 用の時刻 seam）。"""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 def month_of(ts: str) -> str:
@@ -141,6 +145,40 @@ def append(path: Path, entry: LedgerEntry) -> None:
 def has_entry(entries: list[LedgerEntry], session: str, stage: str) -> bool:
     """同一セッション・同一段の記録が既にあるか（再実行時の二重計上防止）。"""
     return any(e.session == session and e.stage == stage for e in entries)
+
+
+def latest_entry_epoch(entries: list[LedgerEntry], session: str, stage: str) -> float | None:
+    """同一セッション・同一段の最新記録のエポック秒（無ければ None）。
+
+    `meeting_info.json` 更新（FR-MI-01）や話者名の修正は同一段の再実行・再課金を伴う。
+    `has_entry` の単純な存在チェックでは「同一段は一度だけ課金される」という前提が崩れ、
+    2回目以降の実課金が台帳へ記録されない（幻の非課金）。呼び出し側は成果物の mtime とここを
+    比較し、前回記録より後に成果物が更新されていれば「まだ記録していない実行」と判定する。
+
+    `ts` は秒精度（`now_iso`）のため、成果物の mtime（小数秒）と直接比べると同一秒内の
+    再生成を取りこぼす。記録側が `units["artifactMtime"]` を残すようになったため、まずは
+    `latest_artifact_mtime` を使い、キーを持たない過去行だけがここへ落ちてくる。
+    """
+    matching = [e for e in entries if e.session == session and e.stage == stage]
+    if not matching:
+        return None
+    latest = max(matching, key=lambda e: e.ts)
+    return datetime.fromisoformat(latest.ts).timestamp()
+
+
+def latest_artifact_mtime(entries: list[LedgerEntry], session: str, stage: str) -> float | None:
+    """同一セッション・同一段の記録に残る成果物 mtime の最大値（無ければ None）。
+
+    記録時点の成果物の更新時刻をそのまま持つため、`ts`（秒精度）を介さずに小数秒まで比較できる
+    （同一秒内の再生成を取りこぼさない）。`units` に載せるのは、追記のみの台帳へ後付けの
+    キーを足しても過去行を壊さないためである（過去行は None を返し、呼び出し側が `ts` 比較へ倒す）。
+    """
+    values = [
+        float(e.units[_ARTIFACT_MTIME_UNIT])
+        for e in entries
+        if e.session == session and e.stage == stage and _ARTIFACT_MTIME_UNIT in e.units
+    ]
+    return max(values) if values else None
 
 
 def monthly_total(entries: list[LedgerEntry], month: str) -> float:

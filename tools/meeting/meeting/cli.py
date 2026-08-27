@@ -18,7 +18,9 @@ from dataclasses import replace
 from datetime import datetime
 from typing import Callable, Sequence
 
+from meeting import edit as edit_mod
 from meeting import ledger, pipeline, runner, slack, wizard
+from meeting import materials as materials_mod
 from meeting.config import MeetingConfig, load_config
 from meeting.runner import Runner, Stage
 
@@ -123,6 +125,11 @@ def _build_parser() -> argparse.ArgumentParser:
     p_minutes.add_argument(
         "--claude", action="store_true", help="Bedrock 要約をスキップ（Claude 生成経路。実名 PII を外部送信）"
     )
+    p_minutes.add_argument(
+        "--force-summarize",
+        action="store_true",
+        help="要約段を作り直す（手編集済み議事録を破棄し Bedrock を再課金。②議事録編集の復旧経路）",
+    )
     _add_profile_option(p_minutes)
     p_minutes.set_defaults(handler=_cmd_minutes)
 
@@ -141,6 +148,19 @@ def _build_parser() -> argparse.ArgumentParser:
     p_slack.add_argument("session", nargs="?", default=None, help="対象セッション（既定=最新）")
     p_slack.add_argument("--channel", default=None, help="投稿先チャンネルID（省略時は既定 or 対話入力）")
     p_slack.set_defaults(handler=_cmd_slack)
+
+    p_materials = sub.add_parser(
+        "materials", help="付帯資料を materials/ へ投入（③付帯資料。.txt/.md/.pdf/.pptx）"
+    )
+    p_materials.add_argument("session", help="対象セッション")
+    p_materials.add_argument(
+        "paths", nargs="+", help="ファイル／フォルダ／glob パターン（複数指定可）"
+    )
+    p_materials.set_defaults(handler=_cmd_materials)
+
+    p_edit = sub.add_parser("edit", help="生成済み議事録(minutes.md)を外部エディタで編集（②議事録編集）")
+    p_edit.add_argument("session", nargs="?", default=None, help="対象セッション（既定=最新）")
+    p_edit.set_defaults(handler=_cmd_edit)
 
     p_status = sub.add_parser("status", help="セッションの現在段を表示")
     p_status.add_argument("session", nargs="?", default=None, help="対象セッション（既定=最新）")
@@ -252,7 +272,14 @@ def _cmd_minutes(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) -> i
         )
         return 1
 
-    rc = pipeline.run_minutes_pipeline(cfg, session, claude=args.claude, run=run)
+    if args.force_summarize and args.claude:
+        # Claude 経路は Bedrock 要約を踏まないため作り直す対象が無い（Unit B 側でも排他）。
+        print("エラー: --force-summarize は --claude と併用できません。", file=sys.stderr)
+        return 1
+
+    rc = pipeline.run_minutes_pipeline(
+        cfg, session, claude=args.claude, run=run, force_summarize=args.force_summarize
+    )
     if rc != 0:
         return rc
 
@@ -408,6 +435,60 @@ def _print_next_steps(stage: Stage, session: str, claude: bool) -> None:
 
 
 # --- status / cost ------------------------------------------------------------
+
+
+def _cmd_materials(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) -> int:
+    """付帯資料を `data/out/<session>/materials/` へ投入する（③付帯資料）。
+
+    実際の抽出・上限判定・要約プロンプトへの組込は Unit B（次回 `meeting minutes` 実行時）が行う
+    （FR-16：連携はファイルの受け渡しのみ）。ここではファイルの解決とコピーだけを行う。
+    """
+    session = runner.resolve_session(cfg, args.session)
+    if runner.detect_stage(cfg, session) is Stage.NO_RECORDING:
+        # セッション ID の綴り違いを黙って通すと `data/out/<typo>/materials/` を作り、資料は
+        # どの議事録にも反映されないまま残る（次の実行でも拾われない）。
+        print(
+            f"エラー: セッション {session} が見つかりません（録音も取込も存在しません）。"
+            "`meeting status` でセッションIDを確認してください。",
+            file=sys.stderr,
+        )
+        return 1
+    resolved, warnings = materials_mod.resolve_paths(tuple(args.paths))
+    for warning in warnings:
+        print(f"⚠ {warning}")
+    if not resolved:
+        print("投入するファイルがありませんでした。")
+        return 1
+    materials_dir = materials_mod.copy_into(cfg, session, resolved)
+    print(f"{len(resolved)} 件を投入しました: {materials_dir}")
+    for path in resolved:
+        print(f"  - {path.name}")
+    print("次回の `meeting minutes` 実行時に抽出され、議事録生成に反映されます。")
+    return 0
+
+
+def _cmd_edit(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) -> int:
+    """`minutes.md` を外部エディタで編集する（②議事録編集・Phase 1）。
+
+    初回編集で `minutes.generated.md` へ退避し `minutes.meta.json` に `edited: true` を立てる
+    （Unit B が以後の自動上書きを拒否するようになる。上書きするには `--force` 相当が必要）。
+    保存後、Slack 親メッセージの抽出に要る見出し（`## 決定事項`／`## ToDo`）が欠けていれば警告する。
+    """
+    session = runner.resolve_session(cfg, args.session)
+    minutes_path = cfg.session_out_dir(session) / "minutes.md"
+    try:
+        _markdown, missing = edit_mod.edit(minutes_path)
+    except ValueError as exc:
+        print(f"エラー: {exc}", file=sys.stderr)
+        return 1
+    print(f"議事録を保存しました: {minutes_path}")
+    if missing:
+        print(
+            "⚠ Slack 親メッセージ（要約）の抽出に使う見出しが欠けています: " + "、".join(missing) + "\n"
+            "  このままだと Slack 投稿時に先頭本文のフォールバックになり、構造化サマリが出ません。"
+        )
+    print("Slack へ投稿済みの場合、この編集は反映されません（再投稿するとスレッドが増えます）。")
+    return 0
 
 
 def _cmd_status(cfg: MeetingConfig, args: argparse.Namespace, run: Runner) -> int:

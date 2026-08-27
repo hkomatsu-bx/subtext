@@ -228,6 +228,18 @@ def _title_label(session: str) -> str:
     return f"{y}-{mo}-{d} {h}:{mi}"
 
 
+def has_section(markdown: str, keyword: str) -> bool:
+    """`## <keyword で始まる見出し>` セクションが存在するか（純粋、公開版・②議事録編集が使う）。
+
+    `build_parent` の決定事項／ToDo 抽出（`_section_body`）と同じ前方一致判定を公開する。
+    手編集で見出し文言が変わると `build_parent` が先頭本文フォールバックへ静かに落ちるため、
+    保存後の検査でこの判定を再利用する。
+    """
+    return any(
+        line.startswith("## ") and line[3:].strip().startswith(keyword) for line in markdown.splitlines()
+    )
+
+
 def _section_body(markdown: str, keyword: str) -> list[str]:
     """`## <keyword で始まる見出し>` セクションの本文行を返す（見出し行は除く・純粋）。
 

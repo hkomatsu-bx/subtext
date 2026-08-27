@@ -251,6 +251,43 @@ def test_estimate_transcribe_uses_manifest(cfg: MeetingConfig, repo: Path) -> No
 
 
 @pytest.mark.unit
+def test_materials_char_count_zero_when_no_cache_file(cfg: MeetingConfig, repo: Path) -> None:
+    assert runner.materials_char_count(cfg, _SESSION) == 0
+
+
+@pytest.mark.unit
+def test_materials_char_count_sums_included_materials(cfg: MeetingConfig, repo: Path) -> None:
+    cache = {
+        "materials": [{"fileName": "a.txt", "charCount": 10}, {"fileName": "b.pdf", "charCount": 20}],
+        "excluded": [],
+        "warnings": [],
+    }
+    write_out_file(repo, _SESSION, "materials.extracted.json", json.dumps(cache))
+    assert runner.materials_char_count(cfg, _SESSION) == 30
+
+
+@pytest.mark.unit
+def test_materials_char_count_zero_when_cache_broken(cfg: MeetingConfig, repo: Path) -> None:
+    write_out_file(repo, _SESSION, "materials.extracted.json", "{not json")
+    assert runner.materials_char_count(cfg, _SESSION) == 0
+
+
+@pytest.mark.unit
+def test_estimate_summary_includes_materials_chars(cfg: MeetingConfig, repo: Path) -> None:
+    write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
+    write_out_file(repo, _SESSION, "final_transcript.json", json.dumps({"segments": [{"text": "x" * 1000}]}))
+    without_materials = runner.estimate_summary(cfg, _SESSION, claude=False)
+
+    write_out_file(
+        repo, _SESSION, "materials.extracted.json", json.dumps({"materials": [{"charCount": 500}]})
+    )
+    with_materials = runner.estimate_summary(cfg, _SESSION, claude=False)
+
+    assert with_materials is not None and without_materials is not None
+    assert with_materials.usd > without_materials.usd
+
+
+@pytest.mark.unit
 def test_estimate_summary_none_without_transcript(cfg: MeetingConfig, repo: Path) -> None:
     write_manifest(repo, _SESSION, self_sec=1, others_sec=1)
     assert runner.estimate_summary(cfg, _SESSION, claude=False) is None
@@ -757,3 +794,24 @@ def test_parse_auth_output_keeps_indented_remediation_lines() -> None:
         "指定された AWS プロファイルが見つかりません。",
         "  綴りを確認してください。",
     ]
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_force_summarize_adds_stage(cfg: MeetingConfig) -> None:
+    """`force_summarize` は `--stage summarized` を渡す（手編集済み議事録の作り直し）。"""
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=False, force_summarize=True)
+    assert cmd[-2:] == ["--stage", "summarized"]
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_force_summarize_ignored_for_claude(cfg: MeetingConfig) -> None:
+    """Claude 経路では付けない（Unit B 側で `--no-summarize` と排他のため起動が失敗する）。"""
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=True, force_summarize=True)
+    assert "--stage" not in cmd
+    assert "--no-summarize" in cmd
+
+
+@pytest.mark.unit
+def test_build_pipeline_command_default_has_no_stage(cfg: MeetingConfig) -> None:
+    cmd = runner.build_pipeline_command(cfg, _SESSION, claude=False)
+    assert "--stage" not in cmd

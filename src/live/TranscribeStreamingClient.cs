@@ -15,21 +15,16 @@ namespace Subtext.Live;
 /// 認証情報はコードに持たず、AWS 既定の資格情報解決（プロファイル/SSO/環境変数）に委ねる（NFR-SEC-07）。
 /// VAD は持たず無音分割は Transcribe 側に委ねる（NFR-06）。相手系統も話者分離は無効（Q4=A, ShowSpeakerLabel=false）。
 /// </summary>
-public sealed class TranscribeStreamingClient : ILiveTranscribeClient
+public sealed class TranscribeStreamingClient(LiveSttConfig config, LivePcmConverter converter)
+    : ILiveTranscribeClient
 {
     // capture 消費タスクが PCM を貯める中間バッファの上限（約2秒分 = 20ms フレーム × 100）。
     // bounded + Wait で「SDK pull 速度 ≒ capture 消費速度」の背圧を保ち、SDK 遅延時の
     // メモリ膨張を防ぐ（Unbounded は背圧が消えるため不採用）。
     private const int PcmChannelCapacity = 100;
 
-    private readonly LiveSttConfig _config;
-    private readonly LivePcmConverter _converter;
-
-    public TranscribeStreamingClient(LiveSttConfig config, LivePcmConverter converter)
-    {
-        _config = config ?? throw new ArgumentNullException(nameof(config));
-        _converter = converter ?? throw new ArgumentNullException(nameof(converter));
-    }
+    private readonly LiveSttConfig _config = config ?? throw new ArgumentNullException(nameof(config));
+    private readonly LivePcmConverter _converter = converter ?? throw new ArgumentNullException(nameof(converter));
 
     public async IAsyncEnumerable<LiveCaption> StreamCaptionsAsync(
         IAsyncEnumerable<AudioFrame> frames,

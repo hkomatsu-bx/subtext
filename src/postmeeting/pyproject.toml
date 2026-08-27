@@ -2,7 +2,7 @@
 # Subtext Unit B — 会議後パイプライン（Python）。Unit A 出力(WAV+manifest)を入力に
 # Transcribe バッチ話者分離 → 絶対時刻統合 → Bedrock 議事録生成を行うローカル CLI。
 name = "subtext-postmeeting"
-version = "1.0.0"
+version = "1.1.0"
 description = "Subtext Unit B: post-meeting transcription/diarization/minutes pipeline (PoC)"
 requires-python = ">=3.13"
 # 依存は完全固定（NFR-SEC-05）。範囲指定せず == でピン留め。公式 PyPI のみ。
@@ -12,6 +12,9 @@ requires-python = ">=3.13"
 dependencies = [
     "awscrt==0.35.0",
     "boto3==1.43.45",
+    # ③付帯資料（.pdf / .pptx のテキスト抽出。非課金・ローカル処理のみ）。
+    "pypdf==6.16.2",
+    "python-pptx==1.0.2",
 ]
 
 [project.scripts]

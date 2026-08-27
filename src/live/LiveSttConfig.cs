@@ -94,10 +94,10 @@ public sealed record LiveSttConfig(
         // 既定は自分・相手の2系統（Q1=A）。
         if (raw is null || raw.Length == 0)
         {
-            return new[] { StreamSource.Self, StreamSource.Others };
+            return [StreamSource.Self, StreamSource.Others];
         }
 
-        var sources = new List<StreamSource>();
+        List<StreamSource> sources = [];
         foreach (string item in raw)
         {
             sources.Add(item.Trim().ToLowerInvariant() switch

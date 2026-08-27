@@ -225,12 +225,32 @@ def estimate_transcribe(cfg: MeetingConfig, session: str) -> Estimate:
     return cfg.pricing.estimate_transcribe(manifest.self_sec, manifest.others_sec)
 
 
+def materials_char_count(cfg: MeetingConfig, session: str) -> int:
+    """`materials.extracted.json` に含まれる付帯資料（採用分のみ）の総文字数（③付帯資料）。
+
+    未存在・壊れている場合は 0（見積・実測いずれも「資料なし」として扱う。資料の有無は
+    Unit B 側の任意機能であり、無いことをハーネス側でエラーにしない）。
+    """
+    path = cfg.session_out_dir(session) / "materials.extracted.json"
+    if not path.is_file():
+        return 0
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    return sum(int(m.get("charCount", 0)) for m in data.get("materials", []))
+
+
 def estimate_summary(cfg: MeetingConfig, session: str, *, claude: bool) -> Estimate | None:
-    """final_transcript.json があれば要約段の概算を返す。無ければ None（録音直後など）。"""
+    """final_transcript.json があれば要約段の概算を返す。無ければ None（録音直後など）。
+
+    付帯資料（③）の文字数が要約プロンプトの入力に加わる分も見積に含める（漏らすと台帳・
+    閾値判定が実際の入力トークン量を過小評価する）。
+    """
     out = cfg.session_out_dir(session) / "final_transcript.json"
     if not out.is_file():
         return None
-    chars = transcript_char_count(cfg, session)
+    chars = transcript_char_count(cfg, session) + materials_char_count(cfg, session)
     return cfg.pricing.estimate_claude(chars) if claude else cfg.pricing.estimate_bedrock(chars)
 
 
@@ -425,8 +445,15 @@ def resolve_postmeeting_cmd() -> list[str]:
     return ["uv", "run", "subtext-postmeeting"]
 
 
-def build_pipeline_command(cfg: MeetingConfig, session: str, *, claude: bool) -> list[str]:
-    """Unit B（subtext-postmeeting）の起動コマンド。--claude 時のみ --no-summarize。"""
+def build_pipeline_command(
+    cfg: MeetingConfig, session: str, *, claude: bool, force_summarize: bool = False
+) -> list[str]:
+    """Unit B（subtext-postmeeting）の起動コマンド。--claude 時のみ --no-summarize。
+
+    `force_summarize` は要約段だけを明示的に作り直す（`--stage summarized`）。手編集済みの
+    議事録は自動更新では上書きされない（BR-EDIT-01）ため、破棄して作り直す唯一の経路になる。
+    Bedrock を必ず呼ぶ＝再課金する点は呼び出し側が見積で提示する。
+    """
     recording_dir = cfg.session_recording_dir(session)
     cmd = [
         *resolve_postmeeting_cmd(),
@@ -437,6 +464,9 @@ def build_pipeline_command(cfg: MeetingConfig, session: str, *, claude: bool) ->
     ]
     if claude:
         cmd.append("--no-summarize")  # Bedrock を呼ばず final_transcript.json で停止
+    elif force_summarize:
+        # --no-summarize と --stage summarized は Unit B 側で排他（矛盾指定）。claude 経路では付けない。
+        cmd += ["--stage", "summarized"]
     return cmd
 
 
@@ -445,6 +475,7 @@ def run_pipeline(
     session: str,
     *,
     claude: bool,
+    force_summarize: bool = False,
     runner: Runner = subprocess.run,
 ) -> "subprocess.CompletedProcess[str]":
     """Unit B（paired モード）をリポジトリルートを cwd にして起動する（課金境界・自動実行）。
@@ -453,7 +484,11 @@ def run_pipeline(
     出力先は OUTPUT_DIR=data/out を環境注入して段検知（out_dir）と一致させる。Unit B は
     .env を cwd から読むため、ルートの .env が拾われる（BR-SEC-01: 値はログに出さない）。
     """
-    return _run_postmeeting(cfg, build_pipeline_command(cfg, session, claude=claude), runner=runner)
+    return _run_postmeeting(
+        cfg,
+        build_pipeline_command(cfg, session, claude=claude, force_summarize=force_summarize),
+        runner=runner,
+    )
 
 
 def vtt_session_id(vtt_path: Path) -> str:

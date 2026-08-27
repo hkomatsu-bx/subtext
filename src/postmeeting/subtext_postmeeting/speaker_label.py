@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -143,14 +144,11 @@ def _read_mapping(naming_path: Path) -> SpeakerNameMap:
 
 
 def _rename(seg: ResolvedSegment, new_speaker: str) -> ResolvedSegment:
+    """話者だけを差し替えた新しいセグメントを返す（非破壊）。
+
+    `dataclasses.replace` を使う。全フィールドを手で書き写すと、`ResolvedSegment` に項目が
+    増えたときここが黙って既定値へ戻す（型検査も通ってしまう）。
+    """
     if new_speaker == seg.speaker:
         return seg
-    return ResolvedSegment(
-        speaker=new_speaker,
-        origin=seg.origin,
-        start_sec=seg.start_sec,
-        end_sec=seg.end_sec,
-        text=seg.text,
-        confidence=seg.confidence,
-        absolute_start_utc=seg.absolute_start_utc,
-    )
+    return replace(seg, speaker=new_speaker)

@@ -2,7 +2,7 @@
 # Subtext PoC インフラ（AWS CDK / Python, Q8=B）。S3(暗号化/公開遮断/7日/TLS) と
 # 最小権限 IAM をコード化する。Unit B アプリ(src/postmeeting)とは独立した uv プロジェクト。
 name = "subtext-infra"
-version = "1.0.0"
+version = "1.1.0"
 description = "Subtext PoC infrastructure (AWS CDK Python): S3 + least-privilege IAM"
 requires-python = ">=3.13"
 # 依存は完全固定（NFR-SEC-05）。公式 PyPI のみ。

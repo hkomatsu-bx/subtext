@@ -17,10 +17,10 @@ from __future__ import annotations
 import json
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .aws import build_client
 from .config import PipelineConfig
@@ -173,50 +173,75 @@ def _register_aliases(aliases: tuple[str, ...], canonical: str, seen_alias: dict
 # 辞書段（決定的・C3・BR-CORR-06）
 # ---------------------------------------------------------------------------
 @dataclass(frozen=True)
-class _Rule:
-    pattern: re.Pattern[str]
-    # `re.sub` の**置換テンプレート**として安全な形（バックスラッシュを退避済み）。正規表記そのものを
-    # 渡すと `\1` や `\g<0>` が後方参照として解釈され、末尾の単独 `\` は re.PatternError で落ちる。
-    # 用語ファイルは人が書くため、正規表記にバックスラッシュが混じり得る（課金後に生トレースバック）。
-    replacement: str
+class _Dictionary:
+    """エイリアス→正規表記の一括置換器（1 セグメント 1 パス）。
+
+    エイリアスごとに `subn` を回すと、セグメント数×ルール数の走査になるだけでなく、**前の置換で
+    生まれた正規表記に後のルールが当たる**（`BeeX` の中の `Bee` 等）。単一の交替パターンで
+    1 パスにすると、置換結果は二度と走査されず、同じ位置では最長のエイリアスだけが効く
+    （Python の交替は左優先なので、長い順に並べれば最長一致になる）。
+    """
+
+    pattern: re.Pattern[str] | None
+    canonical_by_alias: Mapping[str, str]
+
+    def substitute(self, text: str) -> tuple[str, int]:
+        """1 パスで置換し、(結果, 置換数) を返す（純粋）。"""
+        if self.pattern is None:
+            return text, 0
+        # 置換は関数で返す。文字列を渡すと `re.sub` の**テンプレート**として解釈され、正規表記の
+        # `\1` が後方参照になり、末尾の単独 `\` は re.PatternError で落ちる（用語ファイルは人が
+        # 書くため Windows パスのような表記が混じり得る）。関数なら常にリテラルとして入る。
+        return self.pattern.subn(lambda m: self.canonical_by_alias[m.group(0).casefold()], text)
 
 
-def _build_rules(terms: tuple[CorrectionTerm, ...]) -> list[_Rule]:
-    """エイリアス→正規表記の置換ルールを構築する。長いエイリアスを優先（最長一致）。
+def _build_dictionary(terms: tuple[CorrectionTerm, ...]) -> _Dictionary:
+    """エイリアス→正規表記の一括置換器を構築する。長いエイリアスを優先（最長一致）。
 
     ASCII エイリアス（bx, 1g 等）は語境界付きで大小無視マッチし、部分文字列誤爆を防ぐ。
-    和文エイリアス（カタカナ等）は語境界の概念が無いため素朴一致だが、長い順適用で過剰一致を抑える。
+    和文エイリアス（カタカナ等）は語境界の概念が無いため素朴一致だが、長い順の交替で過剰一致を抑える。
     """
     pairs = [(alias, term.canonical) for term in terms for alias in term.aliases]
-    pairs.sort(key=lambda p: len(p[0]), reverse=True)  # 最長一致優先（過剰一致の抑制）
-    return [_compile_rule(alias, canonical) for alias, canonical in pairs]
+    pairs.sort(key=lambda p: len(p[0]), reverse=True)  # 最長一致優先（交替は左優先）
+
+    lookup: dict[str, str] = {}
+    parts: list[str] = []
+    for alias, canonical in pairs:
+        key = alias.casefold()
+        if key in lookup:
+            continue  # 衝突は load_terms が警告済み。先勝ちで揃える。
+        lookup[key] = canonical
+        parts.append(_alias_pattern(alias))
+    pattern = re.compile("|".join(parts)) if parts else None
+    return _Dictionary(pattern=pattern, canonical_by_alias=lookup)
 
 
-def _compile_rule(alias: str, canonical: str) -> _Rule:
-    """エイリアス1件を置換ルールへコンパイルする（ASCII は語境界付き・大小無視）。"""
+def _alias_pattern(alias: str) -> str:
+    """エイリアス1件を交替パターンの1要素へ変換する（ASCII は語境界付き・大小無視）。
+
+    大小無視はインラインフラグ `(?i:...)` で要素ごとに掛ける。パターン全体に `re.IGNORECASE` を
+    付けると和文エイリアスの厳密一致まで緩むため、1 つの正規表現に両方を共存させる。
+    """
+    escaped = re.escape(alias)
     if alias.isascii():
-        pattern = re.compile(rf"(?<![A-Za-z0-9]){re.escape(alias)}(?![A-Za-z0-9])", re.IGNORECASE)
-    else:
-        pattern = re.compile(re.escape(alias))
-    return _Rule(pattern=pattern, replacement=canonical.replace("\\", "\\\\"))
+        return rf"(?<![A-Za-z0-9])(?i:{escaped})(?![A-Za-z0-9])"
+    return escaped
 
 
 def apply_dictionary(
     segments: tuple[ResolvedSegment, ...], terms: tuple[CorrectionTerm, ...]
 ) -> tuple[tuple[ResolvedSegment, ...], int]:
     """辞書置換を適用し、(新セグメント, 置換ヒット数) を返す（純粋・text のみ変更）。"""
-    rules = _build_rules(terms)
-    if not rules:
+    dictionary = _build_dictionary(terms)
+    if dictionary.pattern is None:
         return segments, 0
 
     hits = 0
     new_segments: list[ResolvedSegment] = []
     for seg in segments:
-        text = seg.text
-        for rule in rules:
-            text, n = rule.pattern.subn(rule.replacement, text)
-            hits += n
-        new_segments.append(seg if text == seg.text else _replace_text(seg, text))
+        text, replaced = dictionary.substitute(seg.text)
+        hits += replaced
+        new_segments.append(_replace_text(seg, text) if replaced else seg)
     return tuple(new_segments), hits
 
 
@@ -337,15 +362,12 @@ def _invoke(runtime: Any, model_id: str, prompt: str) -> bytes:
 # 内部ヘルパ（不変更新）
 # ---------------------------------------------------------------------------
 def _replace_text(seg: ResolvedSegment, text: str) -> ResolvedSegment:
-    return ResolvedSegment(
-        speaker=seg.speaker,
-        origin=seg.origin,
-        start_sec=seg.start_sec,
-        end_sec=seg.end_sec,
-        text=text,
-        confidence=seg.confidence,
-        absolute_start_utc=seg.absolute_start_utc,
-    )
+    """本文だけを差し替えた新しいセグメントを返す（構造不変・BR-CORR-01）。
+
+    `dataclasses.replace` を使う。全フィールドを手で書き写すと、`ResolvedSegment` に項目が
+    増えたときここが黙って既定値へ戻す（構造不変の要件を型検査なしで破る）。
+    """
+    return replace(seg, text=text)
 
 
 def _finalize(

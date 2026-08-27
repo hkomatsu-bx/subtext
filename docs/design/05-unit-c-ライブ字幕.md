@@ -21,6 +21,7 @@ Unit C は capture（Subtext.Capture）を Unit A と共有し、その上に li
 主要な構成要素は次のとおりである。
 
 - **LivePcmConverter**：AudioFrame を Transcribe Streaming が受け取る PCM 形式へ変換する純粋処理。Unit A のコードには手を入れない。
+  変換の実体は `PcmFormat`（Unit A と同一アルゴリズムを内部に持つ意図的な重複）。サンプル列は型付き `Span` で扱い、中間バッファは `ArrayPool` から借りる。
 - **ILiveTranscribeClient / TranscribeStreamingClient**：Transcribe Streaming への接続。話者分離は使わない。言語とサンプルレートは設定値で、既定は `ja-JP` と 16000 である。
 - **CaptionRenderer**：字幕をコンソールに出す。遅延を算出して併記する。
 - **LiveSttApp**：2 系統を並行駆動するオーケストレータ。

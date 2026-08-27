@@ -7,18 +7,15 @@ namespace Subtext.Live;
 /// capture 時刻起点の遅延を算出・表示する（Q3=A）。final を観測サンプルとして集計する（FR-14）。
 /// 字幕テキストは永続化しない（コンソールのみ・NFR-SEC-04）。スレッド安全（2系統並行表示, Q1=A）。
 /// </summary>
-public sealed class CaptionRenderer
+/// <param name="output">表示先（既定は標準出力）。</param>
+/// <param name="now">現在時刻の取得（遅延算出の seam。既定は実時刻）。</param>
+public sealed class CaptionRenderer(TextWriter? output = null, Func<DateTime>? now = null)
 {
-    private readonly TextWriter _out;
-    private readonly Func<DateTime> _now;
-    private readonly List<LatencySample> _samples = new();
-    private readonly object _gate = new();
-
-    public CaptionRenderer(TextWriter? output = null, Func<DateTime>? now = null)
-    {
-        _out = output ?? Console.Out;
-        _now = now ?? (() => DateTime.UtcNow);
-    }
+    private readonly TextWriter _out = output ?? Console.Out;
+    private readonly Func<DateTime> _now = now ?? (() => DateTime.UtcNow);
+    private readonly List<LatencySample> _samples = [];
+    // .NET 9 / C# 13 以降は専用の Lock 型を使う（IDE0330）。
+    private readonly Lock _gate = new();
 
     /// <summary>観測済み final サンプル（読み取り専用スナップショット）。</summary>
     public IReadOnlyList<LatencySample> Samples

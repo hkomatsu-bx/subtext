@@ -641,3 +641,60 @@ def test_post_message_error_surfaces_hint() -> None:
     with pytest.raises(ValueError) as exc:
         slack.post_message("xoxb-x", "C123", "本文", poster=failing_poster)
     assert "/invite" in str(exc.value)
+
+
+@pytest.mark.unit
+def test_has_section_true_when_heading_present() -> None:
+    md = "# 議事録\n## 決定事項\n- 承認\n"
+    assert slack.has_section(md, "決定事項") is True
+
+
+@pytest.mark.unit
+def test_has_section_false_when_heading_absent() -> None:
+    md = "# 議事録\n## ToDo\n"
+    assert slack.has_section(md, "決定事項") is False
+
+
+@pytest.mark.unit
+def test_has_section_does_not_match_undecided_prefix() -> None:
+    """`未決定事項` を `決定事項` の前方一致として誤検出しない（_section_body と同じ規則）。"""
+    md = "# 議事録\n## 未決定事項\n- 保留中の件\n"
+    assert slack.has_section(md, "決定事項") is False
+
+
+@pytest.mark.unit
+def test_build_parent_renders_decision_sub_items_as_sub_bullets() -> None:
+    """決定事項の付帯情報（前提・却下・範囲）を1段インデントで書いた議事録が、親メッセージでも
+    サブ項目として残ること（要約プロンプトがこの形を出すため）。
+    """
+    md = (
+        "# 定例会\n- 日時: 2026-08-26 10:00\n- 参加者: 田中\n\n"
+        "## 決定事項\n"
+        "- 価格を月額5000円に決定（12:30）\n"
+        "    - 前提: 初年度は割引なし\n"
+        "    - 却下: 従量課金案（請求処理が複雑になるため）\n"
+    )
+
+    parent = slack.build_parent(_SESSION, md)
+
+    assert "1. 価格を月額5000円に決定（12:30）" in parent
+    assert "    • 前提: 初年度は割引なし" in parent
+    assert "    • 却下: 従量課金案（請求処理が複雑になるため）" in parent
+
+
+@pytest.mark.unit
+def test_build_parent_does_not_renumber_decision_sub_items() -> None:
+    """サブ項目が採番されて決定の件数が膨らまないこと（1件の決定が3件に見えるのを防ぐ）。"""
+    md = (
+        "## 決定事項\n"
+        "- 決定A（10:00）\n"
+        "    - 前提: X\n"
+        "    - 範囲: Y\n"
+        "- 決定B（11:00）\n"
+    )
+
+    parent = slack.build_parent(_SESSION, md)
+
+    assert "1. 決定A（10:00）" in parent
+    assert "2. 決定B（11:00）" in parent
+    assert "3. " not in parent

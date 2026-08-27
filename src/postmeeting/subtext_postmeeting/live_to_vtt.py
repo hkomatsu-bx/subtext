@@ -18,7 +18,7 @@ import json
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .vtt_writer import _escape, _fmt_timestamp
@@ -136,7 +136,7 @@ def _parse_capture_utc(value: object) -> datetime | None:
     except ValueError:
         return None
     # タイムゾーン表記を欠く値は UTC とみなす（Unit C は常に Z 付きで書く）。
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def main(argv: list[str] | None = None) -> int:

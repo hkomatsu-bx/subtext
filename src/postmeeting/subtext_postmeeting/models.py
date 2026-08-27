@@ -8,7 +8,7 @@ Unit A の連携 JSON（RecordingModels.cs）と整合させる（BR-MERGE-04, F
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -35,26 +35,27 @@ class InputMode(str, Enum):
 # datetime ヘルパ — Unit A は ISO 8601(UTC) で出力する。揺れに耐えるパースを行う。
 # ---------------------------------------------------------------------------
 def parse_utc(value: str | None) -> datetime | None:
-    """ISO 8601 文字列を UTC aware datetime に変換する。None は None のまま返す。"""
+    """ISO 8601 文字列を UTC aware datetime に変換する。None は None のまま返す。
+
+    末尾 `Z`（Unit A / Unit C が出す書式）は `fromisoformat` が 3.11 以降そのまま解する。
+    タイムゾーンを欠く値だけ UTC とみなす。
+    """
     if value is None:
         return None
     text = value.strip()
     if not text:
         return None
-    # 末尾 'Z' を +00:00 に正規化（fromisoformat は Z を解さない版がある）。
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
     parsed = datetime.fromisoformat(text)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def format_utc(value: datetime | None) -> str | None:
     """UTC datetime を末尾 'Z' 付き ISO 8601 文字列に変換する。"""
     if value is None:
         return None
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +196,43 @@ class SpeakerCluster:
             "segmentCount": self.segment_count,
             "totalSec": round(self.total_sec, 3),
         }
+
+
+@dataclass(frozen=True)
+class MeetingInfo:
+    """人手で記入する会議情報（会議名・日時・参加者。FR-MI-01）。
+
+    いずれも任意。未記入（None／空）の項目は summarize 側が現行の決定的算出へフォールバックする
+    （BR-MI-01・BR-SUM-09 改訂）。ここでの参加者は表示名（実名または話者ラベル）であり、
+    `speaker_names.json` の実名解決とは別ファイルで持つ（BR-NAME-04 のログ非出力規則と同様、
+    本体は PII を含み得るためログには出さない）。
+    """
+
+    title: str | None = None
+    meeting_datetime: str | None = None
+    participants: tuple[str, ...] = ()
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "datetime": self.meeting_datetime,
+            "participants": list(self.participants),
+        }
+
+    @staticmethod
+    def from_json(data: dict[str, Any]) -> "MeetingInfo":
+        title = data.get("title")
+        meeting_datetime = data.get("datetime")
+        participants = tuple(str(p).strip() for p in data.get("participants", []) if str(p).strip())
+        return MeetingInfo(
+            title=(str(title).strip() or None) if title else None,
+            meeting_datetime=(str(meeting_datetime).strip() or None) if meeting_datetime else None,
+            participants=participants,
+        )
+
+    def is_empty(self) -> bool:
+        """3項目すべて未記入かどうか（純粋・summarize のフォールバック判定に使う）。"""
+        return self.title is None and self.meeting_datetime is None and not self.participants
 
 
 @dataclass(frozen=True)

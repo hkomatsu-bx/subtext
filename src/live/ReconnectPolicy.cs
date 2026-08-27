@@ -77,11 +77,11 @@ public static class ReconnectPolicy
     // idle timeout（無音で Transcribe がセッションを閉じる）を表すメッセージ断片。
     // メッセージ判定は脆いため定数化し、SDK バージョン差で壊れたら実機ログで再調整する（設計リスク参照）。
     private static readonly string[] IdleTimeoutMarkers =
-    {
+    [
         "no new audio",
         "timed out",
         "timeout",
-    };
+    ];
 
     /// <summary>
     /// BR-RECONN-01: 例外を Transient/Fatal に分類する。未知は Transient に倒す（安全側：
