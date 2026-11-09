@@ -213,7 +213,9 @@ def summarize(
         response = runtime.invoke_model(modelId=model_id, body=body)
         payload = response["body"].read()
     except Exception as exc:
-        raise PipelineError("Bedrock 推論呼び出しに失敗しました。", failed_stage=_STAGE) from exc
+        raise PipelineError(
+            f"Bedrock 推論呼び出しに失敗しました: {_describe_invoke_error(exc)}", failed_stage=_STAGE
+        ) from exc
 
     markdown = extract_markdown(payload)
     if read_stop_reason(payload) == _STOP_REASON_MAX_TOKENS:
@@ -230,6 +232,18 @@ def summarize(
         source_model=model_id,
         generated_at_utc=now(),
     )
+
+
+def _describe_invoke_error(exc: BaseException) -> str:
+    """invoke_model 失敗の原因を、機微情報を含まない範囲で文字列化する（BR-ERR-04）。
+
+    botocore ClientError（response を持つ）は AWS 側が生成した文面で、プロンプト本文を含まない。
+    AccessDeniedException は IAM 不足と Marketplace 未購読の両方で同じコードになり、文面でしか
+    判別できないため全文を載せる。それ以外の例外は文面の出所が不明なので型名に留める。
+    """
+    if isinstance(getattr(exc, "response", None), dict):
+        return str(exc)
+    return type(exc).__name__
 
 
 def build_prompt(
