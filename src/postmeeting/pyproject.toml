@@ -13,7 +13,7 @@ dependencies = [
     "awscrt==0.35.0",
     "boto3==1.43.45",
     # ③付帯資料（.pdf / .pptx のテキスト抽出。非課金・ローカル処理のみ）。
-    "pypdf==6.16.2",
+    "pypdf==6.21.4",
     "python-pptx==1.0.2",
 ]
 
