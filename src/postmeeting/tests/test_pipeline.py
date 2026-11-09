@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,13 @@ from subtext_postmeeting.models import FinalTranscript, MinutesDoc, Stage, Strea
 from subtext_postmeeting.pipeline import PipelineOptions, PostMeetingPipeline, ResultStatus
 
 from .conftest import others_transcribe_json, self_transcribe_json
+
+
+def _write_newer(path: Path, text: str, *, than: Path) -> None:
+    """`than` より確実に新しい mtime で書く（同一 tick で更新検知を取りこぼさないため）。"""
+    path.write_text(text, encoding="utf-8")
+    newer = than.stat().st_mtime + 2
+    os.utime(path, (newer, newer))
 
 
 class FakeS3Io:
@@ -322,7 +330,7 @@ class TestMeetingInfoUpdateTriggersResummarize:
         assert counter["calls"] == 1
 
         meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
-        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+        _write_newer(meeting_info, json.dumps({"title": "定例会"}), than=meeting_info.with_name("minutes.md"))
 
         result = pipeline.run(PipelineOptions(input=rec))
 
@@ -376,7 +384,7 @@ class TestMinutesEditGuard:
         meta = tmp_path / "out" / rec.session_id / "minutes.meta.json"
         meta.write_text(json.dumps({"edited": True}), encoding="utf-8")
         meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
-        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+        _write_newer(meeting_info, json.dumps({"title": "定例会"}), than=meeting_info.with_name("minutes.md"))
 
         with pytest.raises(PipelineError, match="手編集済み"):
             pipeline.run(PipelineOptions(input=rec))
@@ -419,7 +427,7 @@ class TestMinutesEditGuard:
         assert counter["calls"] == 1
 
         meeting_info = tmp_path / "out" / rec.session_id / "meeting_info.json"
-        meeting_info.write_text(json.dumps({"title": "定例会"}), encoding="utf-8")
+        _write_newer(meeting_info, json.dumps({"title": "定例会"}), than=meeting_info.with_name("minutes.md"))
 
         result = pipeline.run(PipelineOptions(input=rec))
 
