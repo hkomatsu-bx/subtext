@@ -23,9 +23,10 @@ from constructs import Construct
 # `global.` プロファイル（全対応リージョンへルーティング）しか無く、`jp.` プロファイルが
 # 存在しない。日本国内保管の方針を崩さないため、jp. プロファイルがある Opus 5.5 を選んだ。
 _DEFAULT_BEDROCK_MODEL_ID = "jp.anthropic.claude-opus-5-5"
-# 上記 jp. プロファイルが束ねる基盤モデルとリージョン（get-inference-profile で確認）。
+# 呼び出しを許可する基盤モデル。jp. プロファイル ID は "jp." + この名前になる。
+# Opus 4.8 も残し、.env の BEDROCK_MODEL_ID だけで再デプロイなしに切り替えられるようにする。
 # InvokeModel はプロファイル ARN と各リージョンの foundation-model ARN の双方に許可が要る。
-_BEDROCK_FOUNDATION_MODEL = "anthropic.claude-opus-5-5"
+_BEDROCK_FOUNDATION_MODELS = ("anthropic.claude-opus-5-5", "anthropic.claude-opus-4-8")
 _BEDROCK_PROFILE_REGIONS = ("ap-northeast-1", "ap-northeast-3")
 _LIFECYCLE_EXPIRATION_DAYS = 7
 
@@ -124,10 +125,13 @@ class SubtextPocStack(Stack):
         # Bedrock: 推論プロファイル ARN ＋ 束ねられた基盤モデル ARN（各リージョン）に限定
         # （NFR-SEC-02）。新しめのモデルはオンデマンド不可・プロファイル経由のみのため、
         # プロファイルだけでなく基盤モデル ARN にも許可が要る（双方なしでは AccessDenied）。
+        # context で上書きした model_id も許可に含める（重複は除く）。
+        profile_ids = dict.fromkeys([model_id, *(f"jp.{fm}" for fm in _BEDROCK_FOUNDATION_MODELS)])
         bedrock_resources = [
-            f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{model_id}",
+            *(f"arn:aws:bedrock:{self.region}:{self.account}:inference-profile/{pid}" for pid in profile_ids),
             *(
-                f"arn:aws:bedrock:{region}::foundation-model/{_BEDROCK_FOUNDATION_MODEL}"
+                f"arn:aws:bedrock:{region}::foundation-model/{fm}"
+                for fm in _BEDROCK_FOUNDATION_MODELS
                 for region in _BEDROCK_PROFILE_REGIONS
             ),
         ]

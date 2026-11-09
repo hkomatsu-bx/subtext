@@ -43,7 +43,8 @@ usd_per_minute = 0.024
 [pricing.bedrock]
 # 入出力トークン単価（USD / 1K tokens）。BEDROCK_MODEL_ID に合わせて改定。
 # 現行は jp.anthropic.claude-opus-5-5（Opus 5.5）。値は Anthropic の一次価格
-# $4 / $20 per MTok に合わせている。Bedrock は別料金体系のため、初回の実課金が出たら
+# $4 / $20 per MTok に合わせている。BEDROCK_MODEL_ID を Opus 4.8 に切り替えたときは
+# $5 / $25（0.005 / 0.025）に戻すこと。Bedrock は別料金体系のため、初回の実課金が出たら
 # Cost Explorer と突き合わせて改定すること（台帳は概算専用・閾値警告のみで停止しない）。
 input_usd_per_1k = 0.004
 output_usd_per_1k = 0.020
