@@ -19,14 +19,13 @@ from constructs import Construct
 # 新しめの Claude はオンデマンド不可・推論プロファイル経由のみのため、既定は
 # 日本リージョン内に閉じる（データ残留）jp. システム定義プロファイルを使う。
 #
-# Sonnet 5 を採らない理由（2026-07-29 確認）: Bedrock の Sonnet 5 は
-# `global.anthropic.claude-sonnet-5`（全対応リージョンへルーティング）しか無く、
-# `jp.` プロファイルが存在しない。日本国内保管の方針を崩さずに新しいモデルへ上げるため、
-# jp. プロファイルがある Opus 4.8 を選んだ。
-_DEFAULT_BEDROCK_MODEL_ID = "jp.anthropic.claude-opus-4-8"
+# Sonnet 5 / 5.5 を採らない理由（2026-11-09 確認）: Bedrock の Sonnet 5 / 5.5 は
+# `global.` プロファイル（全対応リージョンへルーティング）しか無く、`jp.` プロファイルが
+# 存在しない。日本国内保管の方針を崩さないため、jp. プロファイルがある Opus 5.5 を選んだ。
+_DEFAULT_BEDROCK_MODEL_ID = "jp.anthropic.claude-opus-5-5"
 # 上記 jp. プロファイルが束ねる基盤モデルとリージョン（get-inference-profile で確認）。
 # InvokeModel はプロファイル ARN と各リージョンの foundation-model ARN の双方に許可が要る。
-_BEDROCK_FOUNDATION_MODEL = "anthropic.claude-opus-4-8"
+_BEDROCK_FOUNDATION_MODEL = "anthropic.claude-opus-5-5"
 _BEDROCK_PROFILE_REGIONS = ("ap-northeast-1", "ap-northeast-3")
 _LIFECYCLE_EXPIRATION_DAYS = 7
 

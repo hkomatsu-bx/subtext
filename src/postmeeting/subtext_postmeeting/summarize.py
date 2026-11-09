@@ -24,7 +24,9 @@ from .models import FinalTranscript, MeetingInfo, MinutesDoc
 logger = logging.getLogger("subtext.postmeeting")
 
 _STAGE = "summarize"
-_MAX_TOKENS = 4096
+# Opus 5.5 以降は thinking を無効化できず、思考トークンも max_tokens に算入される。
+# 本文の枠を残すため余裕を取る（非ストリーミング呼び出しで SDK タイムアウトに収まる程度）。
+_MAX_TOKENS = 16000
 _ANTHROPIC_VERSION = "bedrock-2023-05-31"
 # Bedrock(Claude messages) の停止理由。出力上限で打ち切られたことを示す値。
 _STOP_REASON_MAX_TOKENS = "max_tokens"
