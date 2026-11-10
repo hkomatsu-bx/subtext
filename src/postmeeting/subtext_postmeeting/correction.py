@@ -22,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
-from .aws import build_client
+from .aws import build_bedrock_runtime_client
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, ResolvedSegment
@@ -30,7 +30,9 @@ from .models import FinalTranscript, ResolvedSegment
 logger = logging.getLogger("subtext.postmeeting")
 
 _STAGE = "correct"
-_MAX_TOKENS = 4096
+# Opus 5.5 以降は thinking を無効化できず、思考トークンも max_tokens に算入される。
+# 本文の枠を残すため余裕を取る（非ストリーミング呼び出しで SDK タイムアウトに収まる程度）。
+_MAX_TOKENS = 16000
 _ANTHROPIC_VERSION = "bedrock-2023-05-31"
 # 非 ASCII エイリアスの最小文字数。和文は語境界の概念が無く素朴な部分一致になるため、短い
 # エイリアスは無関係な語の内側に当たる（例: 「イジ」は「エンゲイジメント」「ペイジ」「デイジー」に
@@ -325,7 +327,7 @@ def correct(
 
     model = config.require_bedrock_model()
     try:
-        runtime = client if client is not None else build_client("bedrock-runtime", config.aws_region, stage=_STAGE)
+        runtime = client if client is not None else build_bedrock_runtime_client(config.aws_region, stage=_STAGE)
         payload = _invoke(runtime, model, build_prompt(seg_dict, terms))
         seg_llm, changed = apply_llm_corrections(seg_dict, payload)
         status = CorrectionStatus.APPLIED

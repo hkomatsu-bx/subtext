@@ -42,11 +42,12 @@ usd_per_minute = 0.024
 
 [pricing.bedrock]
 # 入出力トークン単価（USD / 1K tokens）。BEDROCK_MODEL_ID に合わせて改定。
-# 現行は jp.anthropic.claude-opus-4-8（Opus 4.8）。値は Anthropic の一次価格
-# $5 / $25 per MTok に合わせている。Bedrock は別料金体系のため、初回の実課金が出たら
+# 現行は jp.anthropic.claude-opus-5-5（Opus 5.5）。値は Anthropic の一次価格
+# $4 / $20 per MTok に合わせている。BEDROCK_MODEL_ID を Opus 4.8 に切り替えたときは
+# $5 / $25（0.005 / 0.025）に戻すこと。Bedrock は別料金体系のため、初回の実課金が出たら
 # Cost Explorer と突き合わせて改定すること（台帳は概算専用・閾値警告のみで停止しない）。
-input_usd_per_1k = 0.005
-output_usd_per_1k = 0.025
+input_usd_per_1k = 0.004
+output_usd_per_1k = 0.020
 
 [pricing.claude]
 # Claude 経路（--no-summarize）の概算。実名 PII を含むトランスクリプトを送信する経路。
@@ -66,5 +67,5 @@ chars_per_token = 1.0
 # 議事録の出力トークン概算（要約は入力より小さい）。
 summary_output_tokens = 1500
 # C2 用語補正段の出力トークン概算。補正は全文を入力し「訂正した行だけ」を差分で返すため
-# 出力は小さい（実装上の上限は correction.py の _MAX_TOKENS=4096）。概算用の代表値。
+# 出力は小さい（実装上の上限は correction.py の _MAX_TOKENS=16000）。概算用の代表値。
 correction_output_tokens = 500

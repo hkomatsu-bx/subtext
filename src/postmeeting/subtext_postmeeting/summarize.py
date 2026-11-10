@@ -16,7 +16,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Callable
 
-from .aws import build_client
+from .aws import build_bedrock_runtime_client
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, MeetingInfo, MinutesDoc
@@ -24,7 +24,9 @@ from .models import FinalTranscript, MeetingInfo, MinutesDoc
 logger = logging.getLogger("subtext.postmeeting")
 
 _STAGE = "summarize"
-_MAX_TOKENS = 4096
+# Opus 5.5 以降は thinking を無効化できず、思考トークンも max_tokens に算入される。
+# 本文の枠を残すため余裕を取る（非ストリーミング呼び出しで SDK タイムアウトに収まる程度）。
+_MAX_TOKENS = 16000
 _ANTHROPIC_VERSION = "bedrock-2023-05-31"
 # Bedrock(Claude messages) の停止理由。出力上限で打ち切られたことを示す値。
 _STOP_REASON_MAX_TOKENS = "max_tokens"
@@ -198,7 +200,7 @@ def summarize(
     """
     model_id = config.require_bedrock_model()
     prompt = build_prompt(transcript, meeting_info, materials_text)
-    runtime = client if client is not None else build_client("bedrock-runtime", config.aws_region, stage=_STAGE)
+    runtime = client if client is not None else build_bedrock_runtime_client(config.aws_region, stage=_STAGE)
 
     body = json.dumps(
         {
@@ -211,7 +213,9 @@ def summarize(
         response = runtime.invoke_model(modelId=model_id, body=body)
         payload = response["body"].read()
     except Exception as exc:
-        raise PipelineError("Bedrock 推論呼び出しに失敗しました。", failed_stage=_STAGE) from exc
+        raise PipelineError(
+            f"Bedrock 推論呼び出しに失敗しました: {_describe_invoke_error(exc)}", failed_stage=_STAGE
+        ) from exc
 
     markdown = extract_markdown(payload)
     if read_stop_reason(payload) == _STOP_REASON_MAX_TOKENS:
@@ -228,6 +232,18 @@ def summarize(
         source_model=model_id,
         generated_at_utc=now(),
     )
+
+
+def _describe_invoke_error(exc: BaseException) -> str:
+    """invoke_model 失敗の原因を、機微情報を含まない範囲で文字列化する（BR-ERR-04）。
+
+    botocore ClientError（response を持つ）は AWS 側が生成した文面で、プロンプト本文を含まない。
+    AccessDeniedException は IAM 不足と Marketplace 未購読の両方で同じコードになり、文面でしか
+    判別できないため全文を載せる。それ以外の例外は文面の出所が不明なので型名に留める。
+    """
+    if isinstance(getattr(exc, "response", None), dict):
+        return str(exc)
+    return type(exc).__name__
 
 
 def build_prompt(

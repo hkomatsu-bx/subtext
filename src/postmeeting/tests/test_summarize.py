@@ -119,6 +119,25 @@ def test_summarize_keeps_partial_note_together_with_truncation_note(tmp_path: Pa
     assert "途中で切れています" in doc.markdown
 
 
+class _FailingRuntime:
+    """invoke_model で botocore ClientError 相当（response["Error"]["Code"] を持つ）を送出するフェイク。"""
+
+    def invoke_model(self, *, modelId: str, body: str) -> dict[str, Any]:
+        exc = RuntimeError(
+            "An error occurred (AccessDeniedException) when calling the InvokeModel operation: "
+            "Model access is denied"
+        )
+        exc.response = {"Error": {"Code": "AccessDeniedException"}}  # type: ignore[attr-defined]
+        raise exc
+
+
+def test_summarize_error_message_carries_underlying_cause(tmp_path: Path) -> None:
+    with pytest.raises(PipelineError) as exc_info:
+        _summarize(tmp_path, _FailingRuntime())  # type: ignore[arg-type]
+    assert "AccessDeniedException" in str(exc_info.value)
+    assert "Model access is denied" in str(exc_info.value)
+
+
 def test_read_stop_reason_returns_none_for_unparsable_payload() -> None:
     assert read_stop_reason(b"not json") is None
     assert read_stop_reason(json.dumps({"content": []})) is None

@@ -55,6 +55,14 @@ class TestParseEdgeCases:
         result = parse({"results": {"items": []}}, StreamRole.SELF, "s", "ja-JP")
         assert result.segments == ()
 
+    def test_others_with_null_speaker_labels_does_not_raise(self) -> None:
+        # Arrange: Transcribe はキー欠落ではなく null を明示して返すことがある
+        raw = {"results": {"items": [], "speaker_labels": None}}
+        # Act
+        result = parse(raw, StreamRole.OTHERS, "s", "ja-JP")
+        # Assert
+        assert result.segments == ()
+
     def test_missing_confidence_results_in_none(self) -> None:
         raw = {
             "results": {

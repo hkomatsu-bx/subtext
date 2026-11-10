@@ -38,7 +38,8 @@ def parse(raw_result: dict[str, Any], role: StreamRole, session_id: str, languag
     """Transcribe 出力を RawTranscript に変換する。"""
     results = raw_result.get("results", {})
     tokens = _read_tokens(results.get("items", []))
-    speaker_by_start = {} if role == StreamRole.SELF else _speaker_index(results.get("speaker_labels", {}))
+    # Transcribe は speaker_labels をキー欠落でなく null で返すことがあり、get の既定値では拾えない。
+    speaker_by_start = {} if role == StreamRole.SELF else _speaker_index(results.get("speaker_labels") or {})
 
     labeled = _assign_speakers(tokens, role, speaker_by_start)
     segments = _build_segments(labeled, word_separator=_word_separator(language))
