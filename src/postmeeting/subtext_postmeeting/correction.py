@@ -22,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Mapping
 
-from .aws import build_client
+from .aws import build_bedrock_runtime_client
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, ResolvedSegment
@@ -327,7 +327,7 @@ def correct(
 
     model = config.require_bedrock_model()
     try:
-        runtime = client if client is not None else build_client("bedrock-runtime", config.aws_region, stage=_STAGE)
+        runtime = client if client is not None else build_bedrock_runtime_client(config.aws_region, stage=_STAGE)
         payload = _invoke(runtime, model, build_prompt(seg_dict, terms))
         seg_llm, changed = apply_llm_corrections(seg_dict, payload)
         status = CorrectionStatus.APPLIED

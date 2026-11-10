@@ -16,7 +16,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any, Callable
 
-from .aws import build_client
+from .aws import build_bedrock_runtime_client
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, MeetingInfo, MinutesDoc
@@ -200,7 +200,7 @@ def summarize(
     """
     model_id = config.require_bedrock_model()
     prompt = build_prompt(transcript, meeting_info, materials_text)
-    runtime = client if client is not None else build_client("bedrock-runtime", config.aws_region, stage=_STAGE)
+    runtime = client if client is not None else build_bedrock_runtime_client(config.aws_region, stage=_STAGE)
 
     body = json.dumps(
         {

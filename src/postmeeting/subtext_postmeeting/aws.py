@@ -34,6 +34,22 @@ def build_client(service: str, region: str, *, stage: str) -> Any:
     return import_boto3(stage).client(service, region_name=region)
 
 
+# 長い会議の要約は思考トークン込みで応答まで 60 秒（SDK 既定）を超える。
+_BEDROCK_READ_TIMEOUT_SEC = 900
+
+
+def build_bedrock_runtime_client(region: str, *, stage: str) -> Any:
+    """Bedrock 推論用クライアントを生成する。読み取りタイムアウトを延ばし、自動再試行を止める。
+
+    SDK はタイムアウトした InvokeModel を自動再試行するが、推論は最初からやり直しになり、
+    捨てられた応答の分も課金される（台帳には載らない）。失敗は 1 回で表に出す。
+    """
+    from botocore.config import Config  # boto3 の依存として必ず入る（遅延 import は boto3 と揃える）
+
+    config = Config(read_timeout=_BEDROCK_READ_TIMEOUT_SEC, retries={"total_max_attempts": 1})
+    return import_boto3(stage).client("bedrock-runtime", region_name=region, config=config)
+
+
 def resolve_profile(cli_profile: str | None, env_profile: str) -> str:
     """使う AWS プロファイルを決める（純粋）。`--profile` > 環境変数 > `.env` > 未指定（空）。
 
