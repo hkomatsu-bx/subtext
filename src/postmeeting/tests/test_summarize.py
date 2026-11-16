@@ -62,28 +62,24 @@ def _transcript(*, is_partial: bool = False) -> FinalTranscript:
     )
 
 
-class _FakeRuntime:
-    """invoke_model の応答を固定で返すフェイク（stop_reason を差し替えられる）。"""
+def _chunk(event: dict[str, Any]) -> dict[str, Any]:
+    return {"chunk": {"bytes": json.dumps(event).encode("utf-8")}}
 
-    def __init__(self, *, stop_reason: str = "end_turn", markdown: str = _MARKDOWN) -> None:
-        self._payload = json.dumps(
-            {"content": [{"type": "text", "text": markdown}], "stop_reason": stop_reason}
-        ).encode("utf-8")
+
+class _FakeRuntime:
+    """ストリーミング応答を固定で返すフェイク（stop_reason を差し替えられる）。"""
+
+    def __init__(self, *, stop_reason: str = "end_turn", markdown: str | None = _MARKDOWN) -> None:
+        text_block = {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": markdown}}
+        text_events = [] if markdown is None else [_chunk(text_block)]
+        self._events = [*text_events, _chunk({"type": "message_delta", "delta": {"stop_reason": stop_reason}})]
         self.calls = 0
         self.bodies: list[dict[str, Any]] = []
 
-    def invoke_model(self, *, modelId: str, body: str) -> dict[str, Any]:
+    def invoke_model_with_response_stream(self, *, modelId: str, body: str) -> dict[str, Any]:  # noqa: N803
         self.calls += 1
         self.bodies.append(json.loads(body))
-        return {"body": _FakeBody(self._payload)}
-
-
-class _FakeBody:
-    def __init__(self, payload: bytes) -> None:
-        self._payload = payload
-
-    def read(self) -> bytes:
-        return self._payload
+        return {"body": iter(self._events)}
 
 
 def _summarize(tmp_path: Path, runtime: _FakeRuntime, *, is_partial: bool = False):
@@ -115,6 +111,21 @@ def test_summarize_flags_output_truncated_at_max_tokens(tmp_path: Path) -> None:
     assert doc.markdown.endswith(_MARKDOWN), "本文自体は保持すること（課金済みの成果を捨てない）"
 
 
+def test_summarize_requests_output_limit_large_enough_for_thinking(tmp_path: Path) -> None:
+    """思考トークンも上限に算入されるため、16000 では思考だけで使い切り本文が出ないことがある。"""
+    runtime = _FakeRuntime()
+    _summarize(tmp_path, runtime)
+
+    assert runtime.bodies[0]["max_tokens"] == 64000
+
+
+def test_summarize_empty_text_error_reports_stop_reason(tmp_path: Path) -> None:
+    with pytest.raises(PipelineError) as exc_info:
+        _summarize(tmp_path, _FakeRuntime(stop_reason="max_tokens", markdown=None))
+
+    assert "stop_reason=max_tokens" in str(exc_info.value)
+
+
 def test_summarize_omits_output_config_when_effort_unset(tmp_path: Path) -> None:
     runtime = _FakeRuntime()
     _summarize(tmp_path, runtime)
@@ -140,7 +151,7 @@ def test_summarize_keeps_partial_note_together_with_truncation_note(tmp_path: Pa
 class _FailingRuntime:
     """invoke_model で botocore ClientError 相当（response["Error"]["Code"] を持つ）を送出するフェイク。"""
 
-    def invoke_model(self, *, modelId: str, body: str) -> dict[str, Any]:
+    def invoke_model_with_response_stream(self, *, modelId: str, body: str) -> dict[str, Any]:  # noqa: N803
         exc = RuntimeError(
             "An error occurred (AccessDeniedException) when calling the InvokeModel operation: "
             "Model access is denied"

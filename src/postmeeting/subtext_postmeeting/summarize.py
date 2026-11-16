@@ -17,6 +17,7 @@ from datetime import UTC, datetime
 from typing import Any, Callable
 
 from .aws import build_bedrock_runtime_client
+from .bedrock_stream import invoke_streaming
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, MeetingInfo, MinutesDoc
@@ -24,9 +25,9 @@ from .models import FinalTranscript, MeetingInfo, MinutesDoc
 logger = logging.getLogger("subtext.postmeeting")
 
 _STAGE = "summarize"
-# Opus 5.5 以降は thinking を無効化できず、思考トークンも max_tokens に算入される。
-# 本文の枠を残すため余裕を取る（非ストリーミング呼び出しで SDK タイムアウトに収まる程度）。
-_MAX_TOKENS = 16000
+# 思考トークンも max_tokens に算入され、16000 では長い会議で思考だけで使い切り本文が出なかった。
+# 許可済みモデルの出力上限の最小（Sonnet 4.6 の 64K）に合わせ、どのモデルへ切り替えても 400 にしない。
+_MAX_TOKENS = 64000
 _ANTHROPIC_VERSION = "bedrock-2023-05-31"
 # Bedrock(Claude messages) の停止理由。出力上限で打ち切られたことを示す値。
 _STOP_REASON_MAX_TOKENS = "max_tokens"
@@ -211,8 +212,7 @@ def summarize(
         }
     )
     try:
-        response = runtime.invoke_model(modelId=model_id, body=body)
-        payload = response["body"].read()
+        payload = invoke_streaming(runtime, model_id, body)
     except Exception as exc:
         raise PipelineError(
             f"Bedrock 推論呼び出しに失敗しました: {_describe_invoke_error(exc)}", failed_stage=_STAGE
@@ -236,7 +236,7 @@ def summarize(
 
 
 def _describe_invoke_error(exc: BaseException) -> str:
-    """invoke_model 失敗の原因を、機微情報を含まない範囲で文字列化する（BR-ERR-04）。
+    """推論呼び出し失敗の原因を、機微情報を含まない範囲で文字列化する（BR-ERR-04）。
 
     botocore ClientError（response を持つ）は AWS 側が生成した文面で、プロンプト本文を含まない。
     AccessDeniedException は IAM 不足と Marketplace 未購読の両方で同じコードになり、文面でしか
@@ -316,7 +316,11 @@ def extract_markdown(payload: bytes | str) -> str:
     texts = [block.get("text", "") for block in content if block.get("type") == "text"]
     markdown = "".join(texts).strip()
     if not markdown:
-        raise PipelineError("Bedrock 応答にテキストが含まれていません。", failed_stage=_STAGE)
+        # 思考だけで上限を使い切った（max_tokens）のか、モデルが空で返したのかを切り分けられるようにする。
+        raise PipelineError(
+            f"Bedrock 応答にテキストが含まれていません（stop_reason={data.get('stop_reason')}）。",
+            failed_stage=_STAGE,
+        )
     return markdown
 
 
