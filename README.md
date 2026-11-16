@@ -5,7 +5,7 @@
 <h1 align="center">Subtext</h1>
 
 <p align="center">
-  Web 会議に bot を参加させず、自分の PC の OS 音声層から音声を取得し、<br>
+  Web 会議にボットを参加させず、自分の PC の OS 音声層から音声を取得し、<br>
   会議後にクラウド処理で議事録（<code>minutes.md</code>）を作って Slack へ流すツール。
 </p>
 
@@ -21,7 +21,7 @@
 
 ## これは何か
 
-会議サービスに bot を招待する方式を取らず、**自分の PC の音声（マイク＝自分／スピーカー出力＝相手）** を WASAPI で 2 系統に分けて録り、会議後に文字起こし・要約して議事録を作ります。
+Subtext は、会議サービスにボットを招待する方式を取らず、**自分の PC の音声（マイク＝自分／スピーカー出力＝相手）** を WASAPI で 2 系統に分けて録り、会議後に文字起こし・要約して議事録を作ります。
 録音・取込・議事録生成・Slack 投稿は、1 画面の TUI（`uv run meeting tui`）からまとめて操作できます。
 
 実装は疎結合な 3 ユニットと、それらを駆動するハーネスに分かれています。
@@ -53,7 +53,7 @@
 | **[uv](https://docs.astral.sh/uv/)** | 必須。Python 3.13 は `.python-version` で固定される（Python の事前導入は不要） |
 | **PowerShell 7（`pwsh`）** | 必須。`scripts/*.ps1` の実行に使う。Windows 標準の `powershell.exe`（5.1）とは別物 |
 | **.NET 10 SDK** | Unit A / C をビルド・テストするなら必須。Python 側だけ触るなら不要 |
-| **AWS アカウント** | 文字起こし・要約を実際に走らせるなら必須。字幕（`.vtt`）＋ `--no-summarize` は完全ローカルで動く |
+| **AWS アカウント** | 文字起こし・要約を実際に走らせるなら必須。字幕（`.vtt`）＋ `--no-summarize` なら AWS なしで動く |
 | **ffmpeg** | 録画 mp4 経路を試すときのみ（PATH 上に置く） |
 
 ### セットアップ
@@ -125,8 +125,8 @@ pwsh -NoProfile -File scripts/bootstrap.ps1
 uv run meeting tui
 ```
 
-> Unit B（議事録）は `dist/` に含みません。`uv sync` で `.venv` に入るものを
-> `uv run subtext-postmeeting` で起動します。
+> Unit B（議事録）は `dist/` に含みません。
+> `uv sync` で `.venv` に入るものを `uv run subtext-postmeeting` で起動します。
 
 ### 配布物を GitHub Release へ出す
 
@@ -145,7 +145,9 @@ gh release create v1.0.0 build/subtext-1.0.0-win-x64.zip `
 - **バージョンの一致確認**：C# 1 か所＋Python 4 か所が同じ番号でなければ止まる
 - **秘密と PII の非同梱**：`git archive`（追跡ファイルのみ）で作るため、追跡外の `.env` と `data/` は構造上入らない
 
-パッケージされるのは **HEAD の内容**です。リリースしたい変更は先にコミットしてください。`dist/` の実行ファイルには publish 時のコミット SHA が焼き込まれるため（`製品バージョン` 欄）、コミット後に `publish.ps1` から流し直すと Release と中身の対応が取れます。
+パッケージされるのは **HEAD の内容**です。
+リリースしたい変更は先にコミットしてください。
+`dist/` の実行ファイルには publish 時のコミット SHA が埋め込まれるため（`製品バージョン` 欄）、コミット後に `publish.ps1` から実行し直すと Release と中身の対応が取れます。
 
 > **Release は公開されます**（このリポジトリは public）。添付する zip に秘密は含みませんが、公開して差し支えない内容かは毎回確認してください。
 
