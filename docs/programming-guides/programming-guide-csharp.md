@@ -6,29 +6,35 @@ description: "C# のコーディング規約（Effective C# / More Effective C# 
 
 # C# プログラミングガイド
 
-C# のコーディング規約。本プロジェクトで C# コードを書く際は本ガイドに従う。
+C# のコーディング規約である。
+本プロジェクトで C# コードを書く際は本ガイドに従う。
 
 ## 出典と優先順位
 
 複数の規約が衝突する場合、上にあるものを優先する。
 
-1. **参考書『Effective C#: 50 Specific Ways to Improve Your C#』第3版**（Bill Wagner 著, Addison-Wesley, 2017, C# 6.0 対応）。本ガイドの項目番号・原題はこれに準拠し、根拠としては公開された項目タイトルと要点のみを引用する（本文の逐語転載はしない）。本書を `EC` と略す
-2. **参考書『More Effective C#: 50 Specific Ways to Improve Your C#』第2版**（Bill Wagner 著, Addison-Wesley, 2017）。同じく項目番号・原題に準拠する。本書を `MEC` と略す
-3. **C# 公式ドキュメント（Microsoft Learn）**（<https://learn.microsoft.com/dotnet/csharp/>）— 言語仕様・公式の規範。とりわけ「C# coding conventions」（<https://learn.microsoft.com/dotnet/csharp/fundamentals/coding-style/coding-conventions>）、「識別子の命名規則と規約」、および「.NET Framework Design Guidelines」（<https://learn.microsoft.com/dotnet/standard/design-guidelines/>）。本書群を `MS` と略す
-4. プロジェクト共通規約（`.claude/rules/` の common・csharp）およびユーザーグローバル規約
+1. **参考書『Effective C#: 50 Specific Ways to Improve Your C#』第3版**（Bill Wagner 著, Addison-Wesley, 2017, C# 6.0 対応）。本ガイドの項目番号・原題はこれに準拠し、根拠としては公開された項目タイトルと要点のみを引用する（本文の逐語転載はしない）。本書を `EC` と略す。
+2. **参考書『More Effective C#: 50 Specific Ways to Improve Your C#』第2版**（Bill Wagner 著, Addison-Wesley, 2017）。同じく項目番号・原題に準拠する。本書を `MEC` と略す。
+3. **C# 公式ドキュメント（Microsoft Learn）**（<https://learn.microsoft.com/dotnet/csharp/>）。言語仕様・公式の規範である。とりわけ「C# coding conventions」（<https://learn.microsoft.com/dotnet/csharp/fundamentals/coding-style/coding-conventions>）、「識別子の命名規則と規約」、および「.NET Framework Design Guidelines」（<https://learn.microsoft.com/dotnet/standard/design-guidelines/>）。本書群を `MS` と略す。
+4. プロジェクト共通規約（`.claude/rules/` の common・csharp）およびユーザーグローバル規約。
 
-> **例外（プロジェクト固有の決定を優先）**: この順位は設計判断・イディオムに適用する。ただし **バージョン選定・テストフレームワーク・依存ライブラリ・ツールチェーンなどプロジェクト固有の決定は、4 のプロジェクト規約が 1〜3（書籍・公式規範）に優先する**。例: 本プロジェクトのテストフレームワークは xUnit（`.claude/rules/csharp/testing.md`）であり、書籍が別のフレームワークを例示していてもプロジェクトの決定に従う。
+> **例外（プロジェクト固有の決定を優先）**：この順位は設計判断・イディオムに適用する。
+> ただし **バージョン選定・テストフレームワーク・依存ライブラリ・ツールチェーンなどプロジェクト固有の決定は、4 のプロジェクト規約が 1〜3（書籍・公式規範）に優先する**。
+> 例：本プロジェクトのテストフレームワークは xUnit（`.claude/rules/csharp/testing.md`）であり、書籍が別のフレームワークを例示していてもプロジェクトの決定に従う。
 
 ### 補助リファレンス（規範ではなく参考）
 
-設計の裏取りや実装の参考に用いる。規約の根拠としては 1〜4 を優先する。
+設計の裏取りや実装の参考に用いる。
+規約の根拠としては 1〜4 を優先する。
 
 - **.NET アナライザ（Roslyn Analyzers）と `.editorconfig`**（<https://learn.microsoft.com/dotnet/fundamentals/code-analysis/overview>）：静的解析・機械的強制レイヤー。「何を警告し、何を自動修正するか」の根拠（MEC Item 50）
 - **Framework Design Guidelines**（Cwalina & Abrams 著）：公開 API 設計の定番リファレンス。命名・型設計・例外の裏取りに用いる（§7 を補強）
 - **BenchmarkDotNet**（<https://benchmarkdotnet.org/>）：マイクロベンチマークの事実上の標準。性能最適化の計測根拠（§12）
 - **Refactoring カタログ（Martin Fowler）**（<https://refactoring.com/catalog/>）：リファクタリング手法の定番カタログ（§12 の根拠）
 
-> 設計判断（型設計・リソース管理・ジェネリクス・非同期・例外）は必ず Effective C#／More Effective C# の該当項目を根拠にする。言語仕様・命名は MS 公式に従い、機械的強制は Roslyn アナライザ（`.editorconfig`）で行う。補助リファレンスは規範ではなく参考にとどめる。
+> 設計判断（型設計・リソース管理・ジェネリクス・非同期・例外）は必ず Effective C#／More Effective C# の該当項目を根拠にする。
+> 言語仕様・命名は MS 公式に従い、機械的強制は Roslyn アナライザ（`.editorconfig`）で行う。
+> 補助リファレンスは規範ではなく参考にとどめる。
 
 ---
 
@@ -36,9 +42,11 @@ C# のコーディング規約。本プロジェクトで C# コードを書く�
 
 各項目は「規約（命令形）＋ 根拠（`EC Item N` は Effective C# 第3版、`MEC Item N` は More Effective C# 第2版の項目番号）」で記す。
 `EC` は Effective C#、`MEC` は More Effective C#、`MS` は C# 公式ドキュメント、`Analyzer` は .NET アナライザ、`Fowler` は Refactoring カタログを指す。
-章構成は両書の章立てをテーマ別に統合し、全100項目を §1〜§11 に割り当てた。§12 以降はプロジェクト向けの補遺で、§12 リファクタリング指針（Fowler）、§13 モダン C#、§14 テストを収める。
+章構成は両書の章立てをテーマ別に統合し、全100項目を §1〜§11 に割り当てた。
+§12 以降はプロジェクト向けの補遺で、§12 リファクタリング指針（Fowler）、§13 モダン C#、§14 テストを収める。
 コード例の `// NG` は避けるべき書き方、`// OK` は推奨する書き方を示す。
-前提として `Nullable` 参照型を有効化する（`<Nullable>enable</Nullable>`）。これは TypeScript の `strict` に相当し、`null` 関連バグをコンパイル時に検出する。
+前提として `Nullable` 参照型を有効化する（`<Nullable>enable</Nullable>`）。
+これは TypeScript の `strict` に相当し、`null` 関連バグをコンパイル時に検出する。
 
 ---
 
@@ -176,7 +184,7 @@ public IEnumerable<int> Evens(IEnumerable<int> xs) => xs.Where(x => x % 2 == 0);
 - アプリ固有の完全な例外クラスを用意する（意味のあるメッセージ、`innerException` による連鎖）（EC Item 47）。なお例外のシリアライズ（`ISerializable`／`SerializationInfo`）は .NET 8+ で obsolete（`SYSLIB0051`）、`BinaryFormatter` も削除済みのため実装しない（MS、確信度：高）。
 - 強い例外保証（strong exception guarantee）を優先する。失敗しても状態を変更前に戻す（EC Item 48）。
 - `catch` して再 `throw` するより例外フィルタ（`when`）を優先する（EC Item 49）。
-- 例外フィルタの副作用（ logging 等）を活用する。ただしフィルタは純粋に近く保つ（EC Item 50）。
+- 例外フィルタの副作用（logging 等）を活用する。ただしフィルタは純粋に近く保つ（EC Item 50）。
 - 共通規約：例外は握りつぶさず、意味のあるメッセージを付けて処理する。
 
 ```csharp
@@ -247,7 +255,7 @@ var result = await transcribe.SendAsync(chunk).ConfigureAwait(false);
 - PLINQ が並列アルゴリズムをどう実装するかを理解する（MEC Item 35）。
 - 並列アルゴリズムは例外（`AggregateException`）を前提に組む（MEC Item 36）。
 - スレッドを自前生成せずスレッドプールを使う（MEC Item 37）。
-- UI 跨ぎの通信には `BackgroundWorker`（または同等の仕組み）を使う（MEC Item 38）。※レガシー。本プロジェクトはコンソール実行体で UI を持たず適用外。現代は `async`/`await`＋`IProgress<T>` を使う（MS）。
+- UI 跨ぎの通信には `BackgroundWorker`（または同等の仕組み）を使う（MEC Item 38）。※レガシー。本プロジェクトはコンソール実行体で UI を持たず適用外。現在は `async`/`await`＋`IProgress<T>` を使う（MS）。
 - XAML 環境のクロススレッド呼び出し（ディスパッチャ）を理解する（MEC Item 39）。※同上、XAML/UI 非使用のため適用外。
 - 同期の第一選択は `lock()` にする（MEC Item 40）。
 - ロックのスコープは可能な限り小さくする（MEC Item 41）。
@@ -307,7 +315,9 @@ public sealed class AudioCapture          // 型は PascalCase
 
 ## §12 リファクタリング指針（関数型志向と最適化）
 
-> 既定は LINQ と不変データで宣言的に書く。手続き的な最適化は、計測でホットスポットと判明した箇所に限る。出典：Martin Fowler『Refactoring』カタログ（<https://refactoring.com/catalog/>）。
+> 既定は LINQ と不変データで宣言的に書く。
+> 手続き的な最適化は、計測でホットスポットと判明した箇所に限る。
+> 出典：Martin Fowler『Refactoring』カタログ（<https://refactoring.com/catalog/>）。
 
 ### 関数型で書く（明示的ループを避ける）
 
@@ -362,7 +372,10 @@ foreach (var row in rows) output.Add(row.Value * factor);
 
 ### 事前確保でアロケーションを削る（容量が分かるとき）
 
-> 最終的な要素数や長さが事前に分かるなら、初期容量を指定して内部バッファの再確保とコピーを避ける。.NET では確保が GC 圧に直結するため効果が大きい（EC Item 15）。ただし過剰確保はメモリの無駄になるため、容量は実測値か妥当な上限に基づく。まず計測する（§12 冒頭）。
+> 最終的な要素数や長さが事前に分かるなら、初期容量を指定して内部バッファの再確保とコピーを避ける。
+> .NET では確保が GC 圧に直結するため効果が大きい（EC Item 15）。
+> ただし過剰確保はメモリの無駄になるため、容量は実測値か妥当な上限に基づいて決める。
+> まず計測する（§12 冒頭）。
 
 - 要素数が既知のコレクションは初期容量を渡す。`List<T>`／`Dictionary<TKey,TValue>`／`HashSet<T>` はいずれもコンストラクタで容量を受け取る（EC Item 15）。
 - 既存の `List<T>` に大量追加する前は `EnsureCapacity(n)`（.NET 6+）で一度だけ確保する。
@@ -404,7 +417,9 @@ WriteHeader(header);
 
 ## §13 モダン C#（規範書を補完する言語機能）
 
-> 規範書 2 冊は C# 6.0／7.0 対応（2017 年刊）で、現時点でこれ以上新しい版は無い。本プロジェクトは `net10.0-windows`／`LangVersion=latest`（C# 14 相当）で約 8 世代新しいため、書籍が古びた箇所を現行機能で補正する。イミュータビリティ・型設計・非同期の具体方針は `.claude/rules/csharp/coding-style.md`・`patterns.md` に従い、本節は書籍項目との対応と本プロジェクトでの用途に絞る（重複を避ける）。
+> 規範書 2 冊は C# 6.0／7.0 対応（2017 年刊）で、現時点でこれ以上新しい版は無い。
+> 本プロジェクトは `net10.0-windows`／`LangVersion=latest`（C# 14 相当）で約 8 世代新しいため、書籍が古びた箇所を現行機能で補正する。
+> イミュータビリティ・型設計・非同期の具体方針は `.claude/rules/csharp/coding-style.md`・`patterns.md` に従い、本節は書籍項目との対応と本プロジェクトでの用途に絞る（重複を避ける）。
 
 ### 型・不変性（§2・§3 を補完）
 
@@ -447,10 +462,12 @@ public async IAsyncEnumerable<Caption> ReadCaptionsAsync(
 
 ## §14 テスト
 
-> テストの詳細は `.claude/rules/csharp/testing.md`（および `common/testing.md`）に従う。本節は要点と本プロジェクトの構成を示す。TDD（RED → GREEN → IMPROVE）とカバレッジ 80% 以上は共通規約。
+> テストの詳細は `.claude/rules/csharp/testing.md`（および `common/testing.md`）に従う。
+> 本節は要点と本プロジェクトの構成を示す。
+> TDD（RED → GREEN → IMPROVE）とカバレッジ 80% 以上は共通規約である。
 
-- フレームワークは **xUnit**（`[Fact]`／`[Theory]`）。アサーションは **FluentAssertions**、依存のモックは **Moq** または **NSubstitute** を使う（rules/csharp/testing.md。実依存: `xunit` 2.9.3・`coverlet.collector`）。
-- テストは振る舞いで命名し、実装詳細で命名しない（例: `ReadCaptions_StopsEnumeration_WhenCancelled`）。本体は AAA（Arrange-Act-Assert）で構成する（common/testing.md）。
+- フレームワークは **xUnit**（`[Fact]`／`[Theory]`）。アサーションは **FluentAssertions**、依存のモックは **Moq** または **NSubstitute** を使う（rules/csharp/testing.md。実依存：`xunit` 2.9.3・`coverlet.collector`）。
+- テストは振る舞いで命名し、実装詳細で命名しない（例：`ReadCaptions_StopsEnumeration_WhenCancelled`）。本体は AAA（Arrange-Act-Assert）で構成する（common/testing.md）。
 - `tests/` は `src/` 構成をミラーする。
 - カバレッジは `dotnet test --collect:"XPlat Code Coverage"` で収集し（coverlet）、ドメインロジック・入力検証・失敗経路を重点的に覆う。閾値 80% を CI で確認する。
 - 非同期・キャンセル・例外の各経路を正常系と同等に検証する。契約違反（§6 EC Item 45）とキャンセル（§13・MEC Item 33）は特に重要。
