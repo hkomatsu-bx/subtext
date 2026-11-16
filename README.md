@@ -169,7 +169,7 @@ subtext/
 │   ├── verify/         # 録音・議事録の検証補助
 │   └── vocab/          # カスタム語彙管理（任意）
 ├── infra/              # AWS CDK（重いため uv workspace には含めない。デプロイ時のみ個別に sync）
-├── scripts/            # bootstrap / publish
+├── scripts/            # bootstrap / publish / package
 ├── docs/               # 設計書（design/）・運用マニュアル・言語別コーディング規約
 ├── assets/             # アイコン・画面イメージ
 ├── data/               # 録音と議事録の入出力（gitignore）
@@ -201,6 +201,6 @@ subtext/
 
 ## データの取り扱い
 
-音声・実名などの個人情報は、ローカルと自社 AWS に留めて外部へ出さないことを既定にしています（BR-SEC-02）。
+音声・実名などの個人情報は、ローカルと自社 AWS に留めて外部へ出さないことを既定にしています（Unit A の BR-SEC-02）。
 議事録の文章化だけは Bedrock（自社 AWS 内）と Claude 生成（Anthropic へ送信）から選べるため、**どちらを使うかは情報の取り扱い方針で決めてください**。
 判断材料と既定値は [docs/design/09-リスクとセキュリティ方針.md](docs/design/09-リスクとセキュリティ方針.md) と [.claude/skills/subtext-meeting/SKILL.md](.claude/skills/subtext-meeting/SKILL.md) にあります。

@@ -265,7 +265,7 @@ ToDo 項目間・セクション間には空行を1行入れる。
 要約段の再実行は Bedrock の再課金を伴うため、呼び出し側で額を提示してから実行する。
 
 `minutes.md` が手編集済み（`minutes.meta.json` の `edited: true`。議事録編集（EDIT））のときは、この自動再実行を止める。
-`--force` または `--target-stage summarize` の明示指定が無い限り `PipelineError` を送出し、手編集した内容を自動トリガーで上書きしない（BR-EDIT-01）。
+`--force` または `--stage summarized` の明示指定が無い限り `PipelineError` を送出し、手編集した内容を自動トリガーで上書きしない（BR-EDIT-01）。
 明示指定で上書きした場合は新しい生成物で確定し、`edited` フラグはリセットされる。
 会議ハーネスからは `meeting minutes <session> --force-summarize` がこの明示指定を渡す（停止メッセージにも同じコマンドを載せ、復旧手段が分かる状態にする）。
 
