@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -251,8 +252,10 @@ class _FakeClient:
     def __init__(self, payload: bytes | None = None, raise_exc: bool = False) -> None:
         self._payload = payload
         self._raise = raise_exc
+        self.bodies: list[dict] = []
 
     def invoke_model(self, modelId: str, body: str):  # noqa: N803 (boto3 互換)
+        self.bodies.append(json.loads(body))
         if self._raise:
             raise RuntimeError("boom")
         return {"body": _Body(self._payload or b"")}
@@ -280,6 +283,16 @@ class TestCorrect:
         assert out.transcript.segments[0].text == "BeeX と Bedrock"
         assert out.dictionary_hits == 2
         assert out.transcript.model_info["correction"]["status"] == "applied"
+
+    def test_omits_output_config_when_effort_unset(self, tmp_path: Path) -> None:
+        client = _FakeClient(_bedrock_payload([]))
+        correct(_transcript(), _cfg(tmp_path), _TERMS, client=client)
+        assert "output_config" not in client.bodies[0]
+
+    def test_sends_effort_when_configured(self, tmp_path: Path) -> None:
+        client = _FakeClient(_bedrock_payload([]))
+        correct(_transcript(), replace(_cfg(tmp_path), bedrock_effort="high"), _TERMS, client=client)
+        assert client.bodies[0]["output_config"] == {"effort": "high"}
 
     def test_llm_failure_falls_back_to_dictionary(self, tmp_path: Path) -> None:
         client = _FakeClient(raise_exc=True)

@@ -98,3 +98,35 @@ class TestVocabularyName:
         env = _write_env(tmp_path, ["S3_BUCKET=b"])
         config = PipelineConfig.from_env(env)
         assert config.vocabulary_name == ""
+
+
+class TestBedrockEffort:
+    """BEDROCK_EFFORT は任意。未設定ならリクエストに effort を載せずモデル既定に任せる。"""
+
+    @pytest.fixture(autouse=True)
+    def _clear(self, monkeypatch) -> None:
+        for key in ("S3_BUCKET", "BEDROCK_EFFORT"):
+            monkeypatch.delenv(key, raising=False)
+
+    def test_unset_means_model_default(self, tmp_path: Path) -> None:
+        config = PipelineConfig.from_env(_write_env(tmp_path, ["S3_BUCKET=b"]))
+        assert config.bedrock_effort == ""
+        assert config.bedrock_effort_fields() == {}
+
+    def test_blank_is_same_as_unset(self, tmp_path: Path) -> None:
+        config = PipelineConfig.from_env(_write_env(tmp_path, ["S3_BUCKET=b", "BEDROCK_EFFORT=  "]))
+        assert config.bedrock_effort_fields() == {}
+
+    @pytest.mark.parametrize("value", ["low", "medium", "high", "xhigh", "max"])
+    def test_accepts_supported_levels(self, tmp_path: Path, value: str) -> None:
+        config = PipelineConfig.from_env(_write_env(tmp_path, ["S3_BUCKET=b", f"BEDROCK_EFFORT={value}"]))
+        assert config.bedrock_effort_fields() == {"output_config": {"effort": value}}
+
+    def test_normalizes_case_and_whitespace(self, tmp_path: Path) -> None:
+        config = PipelineConfig.from_env(_write_env(tmp_path, ["S3_BUCKET=b", "BEDROCK_EFFORT= Low "]))
+        assert config.bedrock_effort == "low"
+
+    def test_unknown_level_fails_fast(self, tmp_path: Path) -> None:
+        env = _write_env(tmp_path, ["S3_BUCKET=b", "BEDROCK_EFFORT=fast"])
+        with pytest.raises(PipelineError, match="BEDROCK_EFFORT"):
+            PipelineConfig.from_env(env)

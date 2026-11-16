@@ -207,6 +207,7 @@ def summarize(
             "anthropic_version": _ANTHROPIC_VERSION,
             "max_tokens": _MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
+            **config.bedrock_effort_fields(),
         }
     )
     try:

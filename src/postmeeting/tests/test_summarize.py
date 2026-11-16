@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -69,9 +70,11 @@ class _FakeRuntime:
             {"content": [{"type": "text", "text": markdown}], "stop_reason": stop_reason}
         ).encode("utf-8")
         self.calls = 0
+        self.bodies: list[dict[str, Any]] = []
 
     def invoke_model(self, *, modelId: str, body: str) -> dict[str, Any]:
         self.calls += 1
+        self.bodies.append(json.loads(body))
         return {"body": _FakeBody(self._payload)}
 
 
@@ -110,6 +113,21 @@ def test_summarize_flags_output_truncated_at_max_tokens(tmp_path: Path) -> None:
 
     assert "途中で切れています" in doc.markdown
     assert doc.markdown.endswith(_MARKDOWN), "本文自体は保持すること（課金済みの成果を捨てない）"
+
+
+def test_summarize_omits_output_config_when_effort_unset(tmp_path: Path) -> None:
+    runtime = _FakeRuntime()
+    _summarize(tmp_path, runtime)
+
+    assert "output_config" not in runtime.bodies[0], "未指定時はモデル既定の effort に任せる"
+
+
+def test_summarize_sends_effort_when_configured(tmp_path: Path) -> None:
+    runtime = _FakeRuntime()
+    config = replace(_config(tmp_path), bedrock_effort="low")
+    summarize(_transcript(), config, client=runtime, now=lambda: datetime(2026, 6, 20, tzinfo=timezone.utc))
+
+    assert runtime.bodies[0]["output_config"] == {"effort": "low"}
 
 
 def test_summarize_keeps_partial_note_together_with_truncation_note(tmp_path: Path) -> None:

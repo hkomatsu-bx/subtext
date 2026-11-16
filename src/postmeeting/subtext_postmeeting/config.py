@@ -30,6 +30,10 @@ _DEFAULTS = {
     # 未設定時はリポジトリ同梱位置を _default_terms_path() で解決する（C2・FR-C2-06）。
 }
 
+# 既定値を持たせない。未設定時に output_config を送らないことで、モデルごとに異なる既定 effort
+# （Opus 5.5 は medium）をそのまま使い、effort 非対応モデルへの切り替えでも 400 にしない。
+_BEDROCK_EFFORT_LEVELS = ("low", "medium", "high", "xhigh", "max")
+
 
 @dataclass(frozen=True)
 class PipelineConfig:
@@ -50,6 +54,7 @@ class PipelineConfig:
     # ならない理由は aws.apply_profile の docstring を参照。
     aws_profile: str = ""
     materials_max_total_chars: int = 40_000  # ③付帯資料。FR-MAT-04
+    bedrock_effort: str = ""  # 空＝未指定（モデル既定）。補正段・要約段の両方に効く
 
     @staticmethod
     def from_env(env_file: Path | None = None, *, require_s3: bool = True) -> "PipelineConfig":
@@ -97,6 +102,7 @@ class PipelineConfig:
             materials_max_total_chars=_parse_int(
                 get("MATERIALS_MAX_TOTAL_CHARS"), "MATERIALS_MAX_TOTAL_CHARS"
             ),
+            bedrock_effort=_parse_effort(get("BEDROCK_EFFORT")),
         )
 
     def require_bedrock_model(self) -> str:
@@ -107,6 +113,12 @@ class PipelineConfig:
                 failed_stage="summarize",
             )
         return self.bedrock_model_id
+
+    def bedrock_effort_fields(self) -> dict[str, dict[str, str]]:
+        """InvokeModel の body へ展開する effort 指定。未指定なら空（キー自体を送らない）。"""
+        if not self.bedrock_effort:
+            return {}
+        return {"output_config": {"effort": self.bedrock_effort}}
 
 
 def _default_terms_path() -> Path:
@@ -163,6 +175,18 @@ def _parse_int(value: str, key: str) -> int:
     if parsed <= 0:
         raise PipelineError(f"{key} は正の整数で指定してください: {parsed}", failed_stage=_STAGE)
     return parsed
+
+
+def _parse_effort(value: str) -> str:
+    # 誤記をモデル既定へ黙って倒すと、指定したつもりの effort が効いていないことに気付けない。
+    normalized = value.strip().lower()
+    if normalized and normalized not in _BEDROCK_EFFORT_LEVELS:
+        raise PipelineError(
+            f"BEDROCK_EFFORT は {' / '.join(_BEDROCK_EFFORT_LEVELS)} のいずれかで指定してください"
+            f"（未指定ならモデル既定）: '{value.strip()}'",
+            failed_stage=_STAGE,
+        )
+    return normalized
 
 
 def _parse_bool(value: str) -> bool:
