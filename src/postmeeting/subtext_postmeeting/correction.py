@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .aws import build_bedrock_runtime_client
+from .bedrock_stream import invoke_streaming
 from .config import PipelineConfig
 from .errors import PipelineError
 from .models import FinalTranscript, ResolvedSegment
@@ -30,9 +31,8 @@ from .models import FinalTranscript, ResolvedSegment
 logger = logging.getLogger("subtext.postmeeting")
 
 _STAGE = "correct"
-# Opus 5.5 以降は thinking を無効化できず、思考トークンも max_tokens に算入される。
-# 本文の枠を残すため余裕を取る（非ストリーミング呼び出しで SDK タイムアウトに収まる程度）。
-_MAX_TOKENS = 16000
+# 思考トークンも max_tokens に算入される。要約段（summarize._MAX_TOKENS）と同じ理由で同じ値にする。
+_MAX_TOKENS = 64000
 _ANTHROPIC_VERSION = "bedrock-2023-05-31"
 # 非 ASCII エイリアスの最小文字数。和文は語境界の概念が無く素朴な部分一致になるため、短い
 # エイリアスは無関係な語の内側に当たる（例: 「イジ」は「エンゲイジメント」「ペイジ」「デイジー」に
@@ -356,9 +356,7 @@ def _invoke(runtime: Any, model_id: str, prompt: str, effort_fields: dict[str, d
             **effort_fields,
         }
     )
-    response = runtime.invoke_model(modelId=model_id, body=body)
-    payload: bytes = response["body"].read()
-    return payload
+    return invoke_streaming(runtime, model_id, body)
 
 
 # ---------------------------------------------------------------------------

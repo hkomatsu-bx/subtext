@@ -254,19 +254,16 @@ class _FakeClient:
         self._raise = raise_exc
         self.bodies: list[dict] = []
 
-    def invoke_model(self, modelId: str, body: str):  # noqa: N803 (boto3 互換)
+    def invoke_model_with_response_stream(self, modelId: str, body: str):  # noqa: N803 (boto3 互換)
         self.bodies.append(json.loads(body))
         if self._raise:
             raise RuntimeError("boom")
-        return {"body": _Body(self._payload or b"")}
-
-
-class _Body:
-    def __init__(self, data: bytes) -> None:
-        self._data = data
-
-    def read(self) -> bytes:
-        return self._data
+        message = json.loads(self._payload or b'{"content": []}')
+        events = [
+            {"type": "content_block_start", "index": i, "content_block": block}
+            for i, block in enumerate(message["content"])
+        ]
+        return {"body": iter({"chunk": {"bytes": json.dumps(e).encode("utf-8")}} for e in events)}
 
 
 class TestCorrect:
@@ -293,6 +290,11 @@ class TestCorrect:
         client = _FakeClient(_bedrock_payload([]))
         correct(_transcript(), replace(_cfg(tmp_path), bedrock_effort="high"), _TERMS, client=client)
         assert client.bodies[0]["output_config"] == {"effort": "high"}
+
+    def test_requests_output_limit_large_enough_for_thinking(self, tmp_path: Path) -> None:
+        client = _FakeClient(_bedrock_payload([]))
+        correct(_transcript(), _cfg(tmp_path), _TERMS, client=client)
+        assert client.bodies[0]["max_tokens"] == 64000
 
     def test_llm_failure_falls_back_to_dictionary(self, tmp_path: Path) -> None:
         client = _FakeClient(raise_exc=True)

@@ -24,9 +24,15 @@ from constructs import Construct
 # 存在しない。日本国内保管の方針を崩さないため、jp. プロファイルがある Opus 5.5 を選んだ。
 _DEFAULT_BEDROCK_MODEL_ID = "jp.anthropic.claude-opus-5-5"
 # 呼び出しを許可する基盤モデル。jp. プロファイル ID は "jp." + この名前になる。
-# Opus 4.8 も残し、.env の BEDROCK_MODEL_ID だけで再デプロイなしに切り替えられるようにする。
+# いずれも jp. プロファイルを持つモデルに限り、.env の BEDROCK_MODEL_ID だけで再デプロイなしに
+# 切り替えられるようにする（低コスト候補の Sonnet 4.6 / Haiku 5.5 を含む）。
 # InvokeModel はプロファイル ARN と各リージョンの foundation-model ARN の双方に許可が要る。
-_BEDROCK_FOUNDATION_MODELS = ("anthropic.claude-opus-5-5", "anthropic.claude-opus-4-8")
+_BEDROCK_FOUNDATION_MODELS = (
+    "anthropic.claude-opus-5-5",
+    "anthropic.claude-opus-4-8",
+    "anthropic.claude-sonnet-4-6",
+    "anthropic.claude-haiku-5-5",
+)
 _BEDROCK_PROFILE_REGIONS = ("ap-northeast-1", "ap-northeast-3")
 _LIFECYCLE_EXPIRATION_DAYS = 7
 
@@ -138,7 +144,8 @@ class SubtextPocStack(Stack):
         user.add_to_policy(
             iam.PolicyStatement(
                 effect=iam.Effect.ALLOW,
-                actions=["bedrock:InvokeModel"],
+                # 要約・補正段はストリーミングで呼ぶ（Unit B 設計書の要約段）。
+                actions=["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
                 resources=bedrock_resources,
             )
         )
