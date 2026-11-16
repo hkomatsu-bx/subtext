@@ -328,7 +328,7 @@ def correct(
     model = config.require_bedrock_model()
     try:
         runtime = client if client is not None else build_bedrock_runtime_client(config.aws_region, stage=_STAGE)
-        payload = _invoke(runtime, model, build_prompt(seg_dict, terms))
+        payload = _invoke(runtime, model, build_prompt(seg_dict, terms), config.bedrock_effort_fields())
         seg_llm, changed = apply_llm_corrections(seg_dict, payload)
         status = CorrectionStatus.APPLIED
     except Exception as exc:  # noqa: BLE001 フェイルセーフ（NFR-C2-03）
@@ -347,12 +347,13 @@ def correct(
     return _finalize(outcome, named, seg_llm)
 
 
-def _invoke(runtime: Any, model_id: str, prompt: str) -> bytes:
+def _invoke(runtime: Any, model_id: str, prompt: str, effort_fields: dict[str, dict[str, str]]) -> bytes:
     body = json.dumps(
         {
             "anthropic_version": _ANTHROPIC_VERSION,
             "max_tokens": _MAX_TOKENS,
             "messages": [{"role": "user", "content": prompt}],
+            **effort_fields,
         }
     )
     response = runtime.invoke_model(modelId=model_id, body=body)
