@@ -286,7 +286,7 @@ except ClientError as e:
 ## §13 テストとデバッグ
 
 > 本プロジェクトのテストフレームワークは **pytest**（`pytest`／`pytest-cov`。`.claude/rules/python/testing.md`）である。
-> 以下の EP 項目は unittest を前提に書かれているが、**原則は普遍で手段を pytest に読み替える**（モックは `unittest.mock` か `pytest-mock` の `mocker`、カバレッジは `pytest --cov=src`）。
+> 以下の EP 項目は unittest を前提に書かれているが、**原則は普遍で手段を pytest に読み替える**（モックは `unittest.mock` と pytest の `monkeypatch` を使い、`pytest-mock` は導入していない。カバレッジは `pytest --cov=src`）。
 
 - 関連する振る舞いをまとめて検証する（EP Item 108。unittest の `TestCase` サブクラスに相当。pytest ではテスト関数＋`assert`）。
 - ユニットテストより統合テストを優先する（EP Item 109）。

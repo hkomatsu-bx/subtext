@@ -549,6 +549,14 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <td>議事録作成</td>
 </tr>
 <tr>
+<td><code>e</code></td>
+<td>議事録の編集（外部エディタで開く。§2-5）</td>
+</tr>
+<tr>
+<td><code>d</code></td>
+<td>付帯資料（会議資料）の投入（§2-5）</td>
+</tr>
+<tr>
 <td><code>s</code></td>
 <td>Slack 投稿</td>
 </tr>
@@ -609,13 +617,30 @@ uv が入っていないとここで停止します（1-1 に戻ってくださ�
 <li>話者ラベルごとに、発話数と代表的な発言がいくつか表示されます。</li>
 <li>それを手がかりに、<strong>実名や役割</strong>を入力します。誰か分からない話者は、分かる範囲（例：「進行役」「お客様A」）で構いません。</li>
 <li>空欄にしたラベルは <code>spk_0</code> などの表記のまま議事録に残ります。</li>
-<li>「保存して続行」を押すと、<strong>そのまま議事録の生成まで自動で進みます</strong>。完了すると <code>data/out/&lt;セッション&gt;/minutes.md</code> ができます。</li>
+<li>「保存して続行」を押すと、続けて<strong>会議名・日時・参加者</strong>を記入する画面が出ます。どれも任意で、空欄のまま進めても構いません（初回だけ聞かれます）。記入した内容は議事録の先頭に載ります。</li>
+<li>そのまま<strong>議事録の生成まで自動で進みます</strong>。完了すると <code>data/out/&lt;セッション&gt;/minutes.md</code> ができます。</li>
 </ol>
 <ul>
 <li>実名と代表発言は<strong>モーダルの中だけに表示</strong>され、ログには記入件数しか出ません。</li>
 <li>中止した場合は議事録は作られません。<code>m</code> を押せば同じところから再開できます。</li>
 <li>自動で続きに進むのは1セッションにつき1回までです。2回目以降は <code>m</code> を押し直してください。</li>
 <li>記入した内容は <code>data/out/&lt;セッション&gt;/speaker_names.json</code> に保存されます。ファイルを直接編集したい場合は §3 を参照。</li>
+</ul>
+<p><strong>会議資料を参考にさせたいとき</strong>は、議事録を作る前にセッションを選んで <code>d</code> を押し、資料のパスを入力します。</p>
+<ul>
+<li>使える資料は <code>.txt</code>／<code>.md</code>／<code>.pdf</code>／<code>.pptx</code> です。ファイル・フォルダ・<code>*.pptx</code> のような指定を1行に1つずつ書けます。</li>
+<li>資料は社名・製品名・略語などの表記をそろえるためだけに使います。資料にしか書かれていない事実や数値は議事録に書かれません。</li>
+<li>画像と、スキャンした PDF（文字を選択できない PDF）は使えません。</li>
+<li>議事録を作ったあとで資料を足すと、次に議事録を作るときに要約だけが作り直されます（Bedrock の課金がかかります）。</li>
+<li>資料は Bedrock（Claude 生成を選んだ場合は Claude）にだけ渡り、S3 と Slack には送られません。</li>
+</ul>
+<p><strong>できた議事録を手直ししたいとき</strong>は、セッションを選んで <code>e</code> を押します。<code>minutes.md</code> がエディタ（<code>$EDITOR</code>、未設定ならメモ帳）で開くので、保存してエディタを閉じれば編集は終わりです。</p>
+<ul>
+<li>初めて編集したときに、生成直後の版が <code>minutes.generated.md</code> として残ります。</li>
+<li>手直しした議事録は、話者名や会議情報を直したあとの自動の作り直しでは上書きされません。作り直したいときはコマンドで <code>uv run meeting minutes &lt;セッション&gt; --force-summarize</code> を実行します（Bedrock の課金が再度かかります）。</li>
+<li><code>## 決定事項</code> と <code>## ToDo</code> の見出しは変えないでください。Slack の親メッセージはこの2つの見出しから作られます（変えると保存後に警告が出ます）。</li>
+<li>Slack に投稿したあとで編集しても、投稿済みのメッセージは変わりません。編集は投稿の前に済ませてください。</li>
+<li>エディタを開いている間は、画面の終了とセッション削除はできません。</li>
 </ul>
 <blockquote>
 <p>話者名の記入は手元のファイルを書くだけで、外部送信はありません。</p>
@@ -939,6 +964,11 @@ uv run meeting minutes --profile &lt;名前&gt;
 
 # --- Slack 投稿（生成済み議事録を投稿。プレビュー＋y/N 承認）---
 uv run meeting slack --channel C0123456789
+
+# --- 議事録の編集と付帯資料 ---
+uv run meeting edit                                                     # 最新セッションの議事録をエディタで開く
+uv run meeting materials &lt;セッション&gt; &lt;資料のパス...&gt;                  # 会議資料を投入する
+uv run meeting minutes &lt;セッション&gt; --force-summarize                   # 手編集した議事録を破棄して要約を作り直す（再課金）
 
 # --- 経路B：WebVTT 直接 ---
 uv run subtext-postmeeting --mode vtt --vtt meeting.vtt                 # 議事録まで

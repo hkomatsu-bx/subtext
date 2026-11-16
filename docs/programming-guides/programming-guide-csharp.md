@@ -57,7 +57,7 @@ C# のコーディング規約である。
 - キャストより `is`／`as` 演算子を使う。失敗時の挙動が安全で、型チェックが一度で済む（EC Item 3）。
 - `string.Format()` より補間文字列（`$"..."`）を使う（EC Item 4）。
 - カルチャ依存の文字列整形には `FormattableString` を使い、`InvariantCulture` を明示する（EC Item 5）。
-- 文字列に意味を埋め込む「文字列型 API」を避ける。`nameof` やリテラル型で置き換える（EC Item 6）。
+- 文字列に意味を埋め込む「文字列型 API」を避ける。`nameof` で置き換える（EC Item 6）。
 - コールバックはデリゲート（`Action`／`Func`／`Predicate`）で表現する（EC Item 7）。
 - イベント発火は null 条件演算子で行う（`Handler?.Invoke(...)`）（EC Item 8）。
 - ボックス化・アンボックス化を最小化する。値型を `object` や非ジェネリックコレクションに入れない（EC Item 9）。
@@ -417,7 +417,7 @@ WriteHeader(header);
 
 ## §13 モダン C#（規範書を補完する言語機能）
 
-> 規範書 2 冊は C# 6.0／7.0 対応（2017 年刊）で、現時点でこれ以上新しい版は無い。
+> 規範書 2 冊は C# 6.0／7.0 対応（2017 年刊）で、2026-11 時点で出版社・書店の目録にこれより新しい版は見当たらない（確信度：中）。
 > 本プロジェクトは `net10.0-windows`／`LangVersion=latest`（C# 14 相当）で約 8 世代新しいため、書籍が古びた箇所を現行機能で補正する。
 > イミュータビリティ・型設計・非同期の具体方針は `.claude/rules/csharp/coding-style.md`・`patterns.md` に従い、本節は書籍項目との対応と本プロジェクトでの用途に絞る（重複を避ける）。
 
@@ -466,15 +466,15 @@ public async IAsyncEnumerable<Caption> ReadCaptionsAsync(
 > 本節は要点と本プロジェクトの構成を示す。
 > TDD（RED → GREEN → IMPROVE）とカバレッジ 80% 以上は共通規約である。
 
-- フレームワークは **xUnit**（`[Fact]`／`[Theory]`）。アサーションは **FluentAssertions**、依存のモックは **Moq** または **NSubstitute** を使う（rules/csharp/testing.md。実依存：`xunit` 2.9.3・`coverlet.collector`）。
+- フレームワークは **xUnit**（`[Fact]`／`[Theory]`）で、アサーションは xUnit 標準の `Assert` を使う（実依存：`xunit` 2.9.3・`coverlet.collector`）。rules/csharp/testing.md が挙げる FluentAssertions・Moq／NSubstitute は導入していない。依存の差し替えは `IAudioCapture` などの抽象と合成実装で行う。
 - テストは振る舞いで命名し、実装詳細で命名しない（例：`ReadCaptions_StopsEnumeration_WhenCancelled`）。本体は AAA（Arrange-Act-Assert）で構成する（common/testing.md）。
 - `tests/` は `src/` 構成をミラーする。
-- カバレッジは `dotnet test --collect:"XPlat Code Coverage"` で収集し（coverlet）、ドメインロジック・入力検証・失敗経路を重点的に覆う。閾値 80% を CI で確認する。
+- カバレッジは `dotnet test --collect:"XPlat Code Coverage"` で収集し（coverlet）、ドメインロジック・入力検証・失敗経路を重点的に覆う。閾値 80% は収集結果で確認する（CI は未整備）。
 - 非同期・キャンセル・例外の各経路を正常系と同等に検証する。契約違反（§6 EC Item 45）とキャンセル（§13・MEC Item 33）は特に重要。
 - 本プロジェクトの C# ユニットはコンソール実行体（capture／recorder／live）であり ASP.NET Core ではない。rules 内の `WebApplicationFactory`／Testcontainers の記述は該当プロジェクトでのみ適用する。
 
 ```csharp
-// AAA＋xUnit＋FluentAssertions（振る舞いで命名）
+// AAA＋xUnit（振る舞いで命名）
 [Fact]
 public void With_ProducesValueEqualInstance_ForSameHz()
 {
@@ -483,6 +483,6 @@ public void With_ProducesValueEqualInstance_ForSameHz()
     // Act
     var same = rate with { Hz = 16_000 };
     // Assert
-    same.Should().Be(rate);   // record の値等価（§13）
+    Assert.Equal(rate, same);   // record の値等価（§13）
 }
 ```
