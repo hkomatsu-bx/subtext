@@ -6,27 +6,33 @@ description: "Python のコーディング規約（Effective Python / PEP / ruff
 
 # Python プログラミングガイド
 
-Python のコーディング規約。本プロジェクトで Python コードを書く際は本ガイドに従う。
+Python のコーディング規約である。
+本プロジェクトで Python コードを書く際は本ガイドに従う。
 
 ## 出典と優先順位
 
 複数の規約が衝突する場合、上にあるものを優先する。
 
-1. **参考書『Effective Python: 125 Specific Ways to Write Better Python』第3版**（Brett Slatkin 著, Addison-Wesley, 2024）。本ガイドの項目番号・原題はこれに準拠し、根拠としては公開された項目タイトルと要点のみを引用する（本文の逐語転載はしない）。本書を `EP` と略す
-2. **Python 公式ドキュメントと PEP**（<https://docs.python.org/3/>）— 言語仕様・公式の規範。とりわけ PEP 8（スタイル）、PEP 20（The Zen of Python）、PEP 257（docstring）、`typing`（型ヒント）。本書群を `PEP` と略す
-3. **ruff と mypy**（<https://docs.astral.sh/ruff/>、<https://mypy.readthedocs.io/>）— 静的解析・機械的強制レイヤー。「何を禁止し、何を自動修正するか」の根拠。`ruff` は Lint と整形（Black 互換）、`mypy` は型検査を担う
-4. プロジェクト共通規約（`.claude/rules/` の common・python）およびユーザーグローバル規約
+1. **参考書『Effective Python: 125 Specific Ways to Write Better Python』第3版**（Brett Slatkin 著, Addison-Wesley, 2024）。本ガイドの項目番号・原題はこれに準拠し、根拠としては公開された項目タイトルと要点のみを引用する（本文の逐語転載はしない）。本書を `EP` と略す。
+2. **Python 公式ドキュメントと PEP**（<https://docs.python.org/3/>）。言語仕様・公式の規範である。とりわけ PEP 8（スタイル）、PEP 20（The Zen of Python）、PEP 257（docstring）、`typing`（型ヒント）。本書群を `PEP` と略す。
+3. **ruff と mypy**（<https://docs.astral.sh/ruff/>、<https://mypy.readthedocs.io/>）。静的解析・機械的強制のレイヤーで、「何を禁止し、何を自動修正するか」の根拠になる。`ruff` は Lint と整形（Black 互換）、`mypy` は型検査を担う。
+4. プロジェクト共通規約（`.claude/rules/` の common・python）およびユーザーグローバル規約。
 
-> **例外（プロジェクト固有の決定を優先）**: この順位は設計判断・イディオムに適用する。ただし **Python バージョン・テストフレームワーク・依存ライブラリ・ツールチェーンなどプロジェクト固有の決定は、4 のプロジェクト規約が 1〜3（書籍・公式規範・ツール既定）に優先する**。例: 本プロジェクトの Python は 3.13 固定（`.python-version`／`requires-python`）、テストは pytest（`.claude/rules/python/testing.md`）であり、書籍が別のバージョンやフレームワークを前提にしていてもプロジェクトの決定に従う。
+> **例外（プロジェクト固有の決定を優先）**：この順位は設計判断・イディオムに適用する。
+> ただし **Python バージョン・テストフレームワーク・依存ライブラリ・ツールチェーンなどプロジェクト固有の決定は、4 のプロジェクト規約が 1〜3（書籍・公式規範・ツール既定）に優先する**。
+> 例：本プロジェクトの Python は 3.13 固定（`.python-version`／`requires-python`）、テストは pytest（`.claude/rules/python/testing.md`）であり、書籍が別のバージョンやフレームワークを前提にしていてもプロジェクトの決定に従う。
 
 ### 補助リファレンス（規範ではなく参考）
 
-設計の裏取りや実装の参考に用いる。規約の根拠としては 1〜4 を優先する。
+設計の裏取りや実装の参考に用いる。
+規約の根拠としては 1〜4 を優先する。
 
 - **『Fluent Python』第2版／第3版**（Luciano Ramalho 著, O'Reilly）：データモデル・イテレータ・並行処理の網羅的な深掘り。設計の裏取りに用いる
 - **Refactoring カタログ（Martin Fowler）**（<https://refactoring.com/catalog/>）：リファクタリング手法の定番カタログ（§15 の根拠）
 
-> 設計判断（Pythonic な書き方・関数設計・クラス設計・並行処理・堅牢性）は必ず Effective Python の該当項目を根拠にする。言語仕様・スタイルは PEP に従い、整形と機械的強制は ruff、型検査は mypy で行う。補助リファレンスは規範ではなく参考にとどめる。
+> 設計判断（Pythonic な書き方・関数設計・クラス設計・並行処理・堅牢性）は必ず Effective Python の該当項目を根拠にする。
+> 言語仕様・スタイルは PEP に従い、整形と機械的強制は ruff、型検査は mypy で行う。
+> 補助リファレンスは規範ではなく参考にとどめる。
 
 ---
 
@@ -36,8 +42,11 @@ Python のコーディング規約。本プロジェクトで Python コード�
 `EP` は Effective Python、`PEP` は Python 公式ドキュメント／PEP、`ruff` は ruff、`mypy` は mypy を指す。
 章構成は Effective Python 第3版の全14章（125項目）に準拠する。
 コード例の `# NG` は避けるべき書き方、`# OK` は推奨する書き方を示す。
-前提として型ヒントを付け、`ruff`（Lint・整形）と `mypy`（型検査、`strict` 推奨）を有効にする。これは TypeScript の `strict` ＋ eslint に相当する。
-Python バージョンはプロジェクトローカル（uv）に固定する。本プロジェクトは **3.13**（`.python-version`＝`uv python pin`、`requires-python = ">=3.13"`。ruff `target-version = "py313"`）。なお 3.13 のフリースレッド（no-GIL）ビルドは 2026 年時点でも experimental のため通常ビルドを使う（確信度：高）。
+前提として型ヒントを付け、`ruff`（Lint・整形）と `mypy`（型検査、`strict` 推奨）を有効にする。
+これは TypeScript の `strict` ＋ eslint に相当する。
+Python バージョンはプロジェクトローカル（uv）に固定する。
+本プロジェクトは **3.13**（`.python-version`＝`uv python pin`、`requires-python = ">=3.13"`。ruff `target-version = "py313"`）。
+なお 3.13 のフリースレッド（no-GIL）ビルドは 2026 年時点でも experimental のため通常ビルドを使う（確信度：高）。
 
 ---
 
@@ -276,7 +285,8 @@ except ClientError as e:
 
 ## §13 テストとデバッグ
 
-> 本プロジェクトのテストフレームワークは **pytest**（`pytest`／`pytest-cov`。`.claude/rules/python/testing.md`）。以下の EP 項目は unittest を前提に書かれているが、**原則は普遍で手段を pytest に読み替える**（モックは `unittest.mock` か `pytest-mock` の `mocker`、カバレッジは `pytest --cov=src`）。
+> 本プロジェクトのテストフレームワークは **pytest**（`pytest`／`pytest-cov`。`.claude/rules/python/testing.md`）である。
+> 以下の EP 項目は unittest を前提に書かれているが、**原則は普遍で手段を pytest に読み替える**（モックは `unittest.mock` と pytest の `monkeypatch` を使い、`pytest-mock` は導入していない。カバレッジは `pytest --cov=src`）。
 
 - 関連する振る舞いをまとめて検証する（EP Item 108。unittest の `TestCase` サブクラスに相当。pytest ではテスト関数＋`assert`）。
 - ユニットテストより統合テストを優先する（EP Item 109）。
@@ -307,7 +317,9 @@ except ClientError as e:
 
 ## §15 リファクタリング指針（関数型志向と最適化）
 
-> 既定は内包表記・ジェネレータ・不変データで宣言的に書く。手続き的な最適化は、計測でホットスポットと判明した箇所に限る。出典：Martin Fowler『Refactoring』カタログ（<https://refactoring.com/catalog/>）。
+> 既定は内包表記・ジェネレータ・不変データで宣言的に書く。
+> 手続き的な最適化は、計測でホットスポットと判明した箇所に限る。
+> 出典：Martin Fowler『Refactoring』カタログ（<https://refactoring.com/catalog/>）。
 
 ### 関数型で書く（明示的ループを避ける）
 
@@ -367,7 +379,10 @@ out = [row.value * factor for row in rows]
 
 ### 事前確保は言語特性を踏まえて（多くの場合 list では不要）
 
-> 「サイズが分かるなら先に確保する」は C 系言語の定石だが、Python の `list` ではほぼ効かない。CPython の `list` は追加時に内部配列を指数的に余剰確保するため、`[None] * n` で事前確保しても再確保の削減効果は小さく、可読性だけ落ちる。事前確保が本当に効くのは固定幅のバイナリ／数値バッファに限られる。まず計測する（EP Item 92）。
+> 「サイズが分かるなら先に確保する」は C 系言語の定石だが、Python の `list` ではほとんど効果がない。
+> CPython の `list` は追加時に内部配列を指数的に余剰確保するため、`[None] * n` で事前確保しても再確保の削減効果は小さく、可読性だけ落ちる。
+> 事前確保に効果があるのは、固定幅のバイナリ／数値バッファに限られる。
+> まず計測する（EP Item 92）。
 
 - `list` をインデックス代入のためだけに `[None] * n` で事前確保しない。内包表記で一括構築する方が速く読みやすい（EP Item 40）。要素数が分かっても通常は内包表記で十分。
 - 固定長のバイナリバッファは `bytearray(n)` で確保し、スライス代入や `memoryview` で書き込む。音声 PCM バッファのように長さが既知で連続したバイト列に好適（EP Item 99）。

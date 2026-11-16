@@ -1,9 +1,10 @@
 # CLAUDE.md
 
 Claude Code がこのリポジトリで作業するときの規則。
-**設計・仕様は書かない**（`docs/design/` が一次情報）。ここには環境の前提、コマンド、守るべきルールだけを置く。
+**設計・仕様は書かない**（`docs/design/` が一次情報）。
+ここには環境の前提、コマンド、守るべきルールだけを置く。
 
-Subtext は Web 会議の音声を「会議に参加せず」OS 音声層から取得し、会議後にクラウド処理で議事録を生成する PoC。
+Subtext は Web 会議の音声を「会議に参加せず」OS 音声層から取得し、会議後にクラウド処理で議事録を生成する Windows 向けツール。
 疎結合な 3 ユニット（Unit A 録音 / Unit B 会議後パイプライン / Unit C ライブ字幕）と、それらを駆動する会議ハーネス（`tools/meeting`）で構成する。
 
 ## 着手前に読む文書
@@ -18,11 +19,11 @@ Subtext は Web 会議の音声を「会議に参加せず」OS 音声層から�
 | `src/live`（Unit C） | [docs/design/05-unit-c-ライブ字幕.md](docs/design/05-unit-c-ライブ字幕.md) |
 | `tools/meeting`（CLI・TUI・コスト台帳・Slack） | [docs/design/06-会議ハーネス.md](docs/design/06-会議ハーネス.md) |
 | `infra`（AWS CDK） | [docs/design/07-インフラ設計.md](docs/design/07-インフラ設計.md) |
-| 追加機能（A1 / C1 / C2 / H2 / B1 / B1F） | [docs/design/08-追加機能.md](docs/design/08-追加機能.md) |
+| 追加機能（A1 / C1 / C2 / H2 / MI / EDIT / MAT / B1 / B1F） | [docs/design/08-追加機能.md](docs/design/08-追加機能.md) |
 | セキュリティ・法務・コストのリスク方針 | [docs/design/09-リスクとセキュリティ方針.md](docs/design/09-リスクとセキュリティ方針.md) |
 | `FR-xx` / `BR-xxx-xx` / `NFR-SEC-xx` / `Qn=A` の意味 | [docs/design/付録-トレーサビリティ.md](docs/design/付録-トレーサビリティ.md)（唯一の一次情報） |
 | 会議ワークフローの実行境界とデータの行き先 | [.claude/skills/subtext-meeting/SKILL.md](.claude/skills/subtext-meeting/SKILL.md)（ガバナンスの「正」） |
-| 言語別の書き方 | `docs/programming_guide (C#).md` / `docs/programming_guide (Python).md` |
+| 言語別の書き方 | [docs/programming-guides/programming-guide-csharp.md](docs/programming-guides/programming-guide-csharp.md) / [docs/programming-guides/programming-guide-python.md](docs/programming-guides/programming-guide-python.md) |
 
 索引は [docs/design/README.md](docs/design/README.md)。
 運用担当者向けの操作手順は `docs/会議議事録作成マニュアル.html`（単一 HTML）。
